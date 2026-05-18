@@ -23,10 +23,14 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     Path("database").mkdir(parents=True, exist_ok=True)
     creds = runtime_auth_state.bootstrap_credentials()
+    host = settings.app_host
+    port = settings.app_port
     print("================================================")
     print("TunnelKeeper Admin Panel")
     print("================================================")
-    print(f"URL:      http://{settings.app_host}:{settings.app_port}")
+    print(f"Bind:     http://{host}:{port}")
+    if host in ("0.0.0.0", "::", "[::]"):
+        print(f"Remote:   http://<server-ip>:{port}")
     print(f"Login:    {creds.username}")
     print(f"Password: {creds.plain_password}")
     print("================================================")

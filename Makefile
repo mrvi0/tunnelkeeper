@@ -1,6 +1,15 @@
 VENV := .venv
 ROOT := $(CURDIR)
 export PYTHONPATH := $(ROOT)
+
+# Load APP_HOST / APP_PORT from .env when present
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+APP_HOST ?= 127.0.0.1
+APP_PORT ?= 8080
+
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 UVICORN := $(VENV)/bin/uvicorn
@@ -20,11 +29,11 @@ migrate: venv
 
 run: venv
 	$(ALEMBIC) upgrade head
-	$(UVICORN) app.main:app --host 127.0.0.1 --port 8080
+	$(UVICORN) app.main:app --host $(APP_HOST) --port $(APP_PORT)
 
 dev: venv
 	$(ALEMBIC) upgrade head
-	$(UVICORN) app.main:app --host 127.0.0.1 --port 8080 --reload
+	$(UVICORN) app.main:app --host $(APP_HOST) --port $(APP_PORT) --reload
 
 lint: venv
 	$(RUFF) check .

@@ -55,13 +55,32 @@ On startup the app prints one-time credentials:
 ================================================
 TunnelKeeper Admin Panel
 ================================================
-URL:      http://127.0.0.1:8080
+Bind:     http://127.0.0.1:8080
 Login:    admin_xxxxx
 Password: yyyyyyyyyyyy
 ================================================
 ```
 
 Credentials are stored only in memory and become invalid after process stop.
+
+### Remote server access
+
+In `.env` set:
+
+```env
+APP_HOST=0.0.0.0
+APP_PORT=8080
+```
+
+Then `make run` binds on all interfaces. Open `http://<server-ip>:8080` from your machine.
+
+Open the port in the firewall if needed, for example:
+
+```bash
+sudo ufw allow 8080/tcp
+```
+
+Stop the panel when finished (`Ctrl+C`). Do not leave it exposed permanently without TLS and network restrictions.
 
 Readonly mode example:
 
@@ -72,7 +91,7 @@ READONLY_MODE=true make run
 ## Make targets
 
 - `make install` - install dependencies
-- `make run` - run locally on `127.0.0.1:8080`
+- `make run` - run using `APP_HOST` / `APP_PORT` from `.env` (default `127.0.0.1:8080`)
 - `make dev` - run with reload
 - `make migrate` - run alembic migrations
 - `make lint` - run ruff checks
