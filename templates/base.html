@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title or "TunnelKeeper" }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script defer src="/static/js/ui.js"></script>
+</head>
+<body hx-boost="true" class="bg-slate-950 text-slate-100 min-h-screen">
+  <header class="border-b border-slate-800 bg-slate-900/90">
+    <div class="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between">
+      <a href="/" class="text-lg font-semibold">TunnelKeeper</a>
+      {% if admin %}
+      <div class="flex items-center gap-3 text-sm text-slate-300">
+        <span>{{ admin.username }}</span>
+        <form method="post" action="/logout">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <button class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700">Logout</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </header>
+  <main class="mx-auto max-w-7xl px-4 py-6">
+    {% if message %}
+      <div class="mb-4 rounded border border-emerald-700 bg-emerald-900/20 px-3 py-2 text-emerald-300">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+      <div class="mb-4 rounded border border-rose-700 bg-rose-900/20 px-3 py-2 text-rose-300">{{ error }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

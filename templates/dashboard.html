@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% set title = "Dashboard" %}
+{% block content %}
+<section class="grid md:grid-cols-3 gap-4 mb-6">
+  <div class="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <p class="text-sm text-slate-400">Tunnel Users</p>
+    <p class="text-2xl font-semibold">{{ users_count }}</p>
+  </div>
+  <div class="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <p class="text-sm text-slate-400">SSH Keys</p>
+    <p class="text-2xl font-semibold">{{ keys_count }}</p>
+  </div>
+  <div class="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <p class="text-sm text-slate-400">PermitOpen Rules</p>
+    <p class="text-2xl font-semibold">{{ rules_count }}</p>
+  </div>
+</section>
+
+<section class="rounded-lg border border-slate-800 bg-slate-900 p-4 mb-6">
+  <div class="flex items-center justify-between mb-3">
+    <div class="flex items-center gap-2">
+      <h2 class="text-lg font-semibold">Tunnel Users</h2>
+      {% if readonly_mode %}
+      <span class="rounded bg-amber-900/40 text-amber-300 px-2 py-1 text-xs">Readonly</span>
+      {% endif %}
+    </div>
+    {% if not readonly_mode %}
+    <button data-open-modal="create-user-modal" class="rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 text-sm font-medium">Create User</button>
+    {% endif %}
+  </div>
+  <input data-search-target="users-table" placeholder="Search users..." class="mb-3 w-full md:w-80 rounded bg-slate-950 border border-slate-700 px-3 py-2" />
+  <div class="overflow-x-auto">
+    <table id="users-table" class="w-full text-sm">
+      <thead class="text-slate-400">
+        <tr class="border-b border-slate-800">
+          <th class="text-left py-2">Username</th>
+          <th class="text-left py-2">Comment</th>
+          <th class="text-left py-2">Home</th>
+          <th class="text-left py-2">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+          <tr class="border-b border-slate-800/60">
+            <td class="py-2">{{ user.username }}</td>
+            <td class="py-2">{{ user.comment or "-" }}</td>
+            <td class="py-2 font-mono text-xs">{{ user.linux_home }}</td>
+            <td class="py-2">
+              <a href="/users/{{ user.id }}" class="text-sky-400 hover:text-sky-300">Open</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="rounded-lg border border-slate-800 bg-slate-900 p-4">
+  <h2 class="text-lg font-semibold mb-3">Latest Audit Events</h2>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-slate-400">
+      <tr class="border-b border-slate-800">
+        <th class="text-left py-2">Time</th>
+        <th class="text-left py-2">Actor</th>
+        <th class="text-left py-2">Action</th>
+        <th class="text-left py-2">Target</th>
+        <th class="text-left py-2">Details</th>
+      </tr>
+      </thead>
+      <tbody>
+      {% for item in latest_audit %}
+        <tr class="border-b border-slate-800/60">
+          <td class="py-2">{{ item.created_at }}</td>
+          <td class="py-2">{{ item.actor }}</td>
+          <td class="py-2">{{ item.action }}</td>
+          <td class="py-2">{{ item.target }}</td>
+          <td class="py-2 text-slate-300">{{ item.details }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<dialog id="create-user-modal" class="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-0 text-slate-100 backdrop:bg-black/60">
+  <form method="dialog" class="p-4 border-b border-slate-800 flex items-center justify-between">
+    <h3 class="font-semibold">Create Tunnel User</h3>
+    <button class="text-slate-400 hover:text-slate-200">x</button>
+  </form>
+  <form method="post" action="/users" class="p-4 space-y-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label class="block">
+      <span class="text-sm text-slate-300">Username</span>
+      <input name="username" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
+    </label>
+    <label class="block">
+      <span class="text-sm text-slate-300">Comment</span>
+      <input name="comment" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
+    </label>
+    <label class="block">
+      <span class="text-sm text-slate-300">Linux Home (optional)</span>
+      <input name="linux_home" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" placeholder="/home/username" />
+    </label>
+    <button class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Create</button>
+  </form>
+</dialog>
+{% endblock %}

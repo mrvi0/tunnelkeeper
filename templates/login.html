@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login | TunnelKeeper</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+    <h1 class="text-xl font-semibold mb-1">TunnelKeeper</h1>
+    <p class="text-sm text-slate-400 mb-6">Temporary admin panel login</p>
+    {% if expired %}
+      <div class="mb-4 rounded border border-amber-700 bg-amber-900/20 px-3 py-2 text-amber-300">Session expired due to inactivity.</div>
+    {% endif %}
+    {% if error %}
+      <div class="mb-4 rounded border border-rose-700 bg-rose-900/20 px-3 py-2 text-rose-300">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/login" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <label class="block">
+        <span class="text-sm text-slate-300">Username</span>
+        <input name="username" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2 outline-none focus:border-sky-500" />
+      </label>
+      <label class="block">
+        <span class="text-sm text-slate-300">Password</span>
+        <input name="password" type="password" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2 outline-none focus:border-sky-500" />
+      </label>
+      <button class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Sign in</button>
+    </form>
+  </div>
+</body>
+</html>
