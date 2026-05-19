@@ -3,12 +3,7 @@
 {% block content %}
 <section class="mb-6 flex flex-wrap items-center justify-between gap-3">
   <div>
-    <div class="flex items-center gap-2">
-      <h1 class="text-xl font-semibold">{{ user.username }}</h1>
-      {% if readonly_mode %}
-      <span class="rounded bg-amber-900/40 text-amber-300 px-2 py-1 text-xs">Readonly</span>
-      {% endif %}
-    </div>
+    <h1 class="text-xl font-semibold">{{ user.username }}</h1>
     <p class="text-sm text-slate-400">{{ user.comment or "No comment" }}</p>
     <p class="font-mono text-xs text-slate-500 mt-1">{{ user.linux_home }}</p>
   </div>
@@ -21,7 +16,7 @@
     </form>
     <form method="post" action="/users/{{ user.id }}/regenerate">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      <button class="rounded bg-emerald-700 hover:bg-emerald-600 px-3 py-2 text-sm">Regenerate</button>
+      <button class="rounded bg-emerald-700 hover:bg-emerald-600 px-3 py-2 text-sm">Regenerate authorized_keys</button>
     </form>
     <form method="post" action="/users/{{ user.id }}/delete" onsubmit="return confirm('Delete this user?')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
@@ -31,171 +26,55 @@
   {% endif %}
 </section>
 
-<section class="grid lg:grid-cols-2 gap-6">
-  <div class="rounded-lg border border-slate-800 bg-slate-900 p-4">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-lg font-semibold">SSH Keys</h2>
-      {% if not readonly_mode %}
-      <button data-open-modal="add-key-modal" class="rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 text-sm">Add Key</button>
-      {% endif %}
+<section class="rounded-lg border border-slate-800 bg-slate-900 p-4">
+  <div class="flex items-center justify-between mb-3">
+    <div>
+      <h2 class="text-lg font-semibold">SSH Keys on this account</h2>
+      <p class="text-sm text-slate-400">Keys are managed globally on the <a href="/keys" class="text-sky-400 hover:text-sky-300">SSH Keys</a> page.</p>
     </div>
-    <input data-search-target="keys-table" placeholder="Search keys..." class="mb-3 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
-    <div class="overflow-x-auto">
-      <table id="keys-table" class="w-full text-sm">
-        <thead class="text-slate-400">
+    {% if not readonly_mode %}
+    <a href="/keys" class="rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 text-sm">Add key</a>
+    {% endif %}
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-slate-400">
         <tr class="border-b border-slate-800">
           <th class="text-left py-2">Name</th>
           <th class="text-left py-2">Fingerprint</th>
+          <th class="text-left py-2">Destinations</th>
           <th class="text-left py-2">Status</th>
           <th class="text-left py-2">Actions</th>
         </tr>
-        </thead>
-        <tbody>
+      </thead>
+      <tbody>
         {% for key in keys %}
-          <tr class="border-b border-slate-800/60">
-            <td class="py-2">{{ key.name }}</td>
-            <td class="py-2 font-mono text-xs">{{ key.fingerprint }}</td>
-            <td class="py-2">
-              {% if key.enabled %}
-                <span class="rounded bg-emerald-900/40 text-emerald-300 px-2 py-1 text-xs">Enabled</span>
-              {% else %}
-                <span class="rounded bg-slate-800 text-slate-300 px-2 py-1 text-xs">Disabled</span>
-              {% endif %}
-            </td>
-            <td class="py-2">
-              <div class="flex gap-2">
-                {% if not readonly_mode %}
-                <form method="post" action="/keys/{{ key.id }}/toggle">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-                  <input type="hidden" name="enabled" value="{{ 'false' if key.enabled else 'true' }}" />
-                  <button class="text-amber-400 hover:text-amber-300">{{ 'Disable' if key.enabled else 'Enable' }}</button>
-                </form>
-                <form method="post" action="/keys/{{ key.id }}/delete" onsubmit="return confirm('Delete key?')">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-                  <button class="text-rose-400 hover:text-rose-300">Delete</button>
-                </form>
-                {% endif %}
-              </div>
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="rounded-lg border border-slate-800 bg-slate-900 p-4">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-lg font-semibold">PermitOpen Rules</h2>
-      {% if not readonly_mode %}
-      <button data-open-modal="add-rule-modal" class="rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 text-sm">Add Rule</button>
-      {% endif %}
-    </div>
-    <input data-search-target="rules-table" placeholder="Search rules..." class="mb-3 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
-    <div class="overflow-x-auto">
-      <table id="rules-table" class="w-full text-sm">
-        <thead class="text-slate-400">
-        <tr class="border-b border-slate-800">
-          <th class="text-left py-2">Alias</th>
-          <th class="text-left py-2">Host:Port</th>
-          <th class="text-left py-2">Status</th>
-          <th class="text-left py-2">Actions</th>
+        <tr class="border-b border-slate-800/60">
+          <td class="py-2">{{ key.name }}</td>
+          <td class="py-2 font-mono text-xs">{{ key.fingerprint }}</td>
+          <td class="py-2 text-slate-300">
+            {% if key.permit_rules %}
+              {{ key.permit_rules | map(attribute='alias') | join(', ') }}
+            {% else %}
+              <span class="text-amber-400">none</span>
+            {% endif %}
+          </td>
+          <td class="py-2">
+            {% if key.enabled %}
+            <span class="rounded bg-emerald-900/40 text-emerald-300 px-2 py-1 text-xs">Enabled</span>
+            {% else %}
+            <span class="rounded bg-slate-800 text-slate-300 px-2 py-1 text-xs">Disabled</span>
+            {% endif %}
+          </td>
+          <td class="py-2">
+            <a href="/keys/{{ key.id }}" class="text-sky-400 hover:text-sky-300">Access settings</a>
+          </td>
         </tr>
-        </thead>
-        <tbody>
-        {% for rule in rules %}
-          <tr class="border-b border-slate-800/60">
-            <td class="py-2">{{ rule.alias }}</td>
-            <td class="py-2 font-mono text-xs">{{ rule.host }}:{{ rule.port }}</td>
-            <td class="py-2">
-              {% if rule.enabled %}
-                <span class="rounded bg-emerald-900/40 text-emerald-300 px-2 py-1 text-xs">Enabled</span>
-              {% else %}
-                <span class="rounded bg-slate-800 text-slate-300 px-2 py-1 text-xs">Disabled</span>
-              {% endif %}
-            </td>
-            <td class="py-2">
-              <div class="flex gap-2">
-                {% if not readonly_mode %}
-                <form method="post" action="/rules/{{ rule.id }}/toggle">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-                  <input type="hidden" name="enabled" value="{{ 'false' if rule.enabled else 'true' }}" />
-                  <button class="text-amber-400 hover:text-amber-300">{{ 'Disable' if rule.enabled else 'Enable' }}</button>
-                </form>
-                <form method="post" action="/rules/{{ rule.id }}/delete" onsubmit="return confirm('Delete rule?')">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-                  <button class="text-rose-400 hover:text-rose-300">Delete</button>
-                </form>
-                {% endif %}
-              </div>
-            </td>
-          </tr>
+        {% else %}
+        <tr><td colspan="5" class="py-4 text-slate-500">No keys for this user.</td></tr>
         {% endfor %}
-        </tbody>
-      </table>
-    </div>
+      </tbody>
+    </table>
   </div>
 </section>
-
-{% if not readonly_mode %}
-<dialog id="add-key-modal" data-modal>
-  <div data-modal-panel class="rounded-xl border border-slate-700 bg-slate-900 text-slate-100 shadow-xl">
-  <div class="p-4 border-b border-slate-800 flex items-center justify-between">
-    <h3 class="font-semibold">Add SSH Key</h3>
-    <button type="button" data-close-modal class="text-slate-400 hover:text-slate-200" aria-label="Close">×</button>
-  </div>
-  <form method="post" action="/users/{{ user.id }}/keys" class="p-4 space-y-3">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <label class="block">
-      <span class="text-sm text-slate-300">Name</span>
-      <input name="name" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
-    </label>
-    <label class="block">
-      <span class="text-sm text-slate-300">Public Key</span>
-      <textarea name="public_key" required rows="5" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2 font-mono text-xs"></textarea>
-    </label>
-    <label class="inline-flex items-center gap-2">
-      <input type="checkbox" name="enabled" checked />
-      <span>Enabled</span>
-    </label>
-    <button type="submit" class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Add</button>
-  </form>
-  </div>
-</dialog>
-
-<dialog id="add-rule-modal" data-modal>
-  <div data-modal-panel class="rounded-xl border border-slate-700 bg-slate-900 text-slate-100 shadow-xl">
-  <div class="p-4 border-b border-slate-800 flex items-center justify-between">
-    <h3 class="font-semibold">Add PermitOpen Rule</h3>
-    <button type="button" data-close-modal class="text-slate-400 hover:text-slate-200" aria-label="Close">×</button>
-  </div>
-  <form method="post" action="/users/{{ user.id }}/rules" class="p-4 space-y-3">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <label class="block">
-      <span class="text-sm text-slate-300">Alias</span>
-      <input name="alias" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
-    </label>
-    <div class="grid grid-cols-3 gap-2">
-      <label class="block col-span-2">
-        <span class="text-sm text-slate-300">Host</span>
-        <input name="host" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
-      </label>
-      <label class="block">
-        <span class="text-sm text-slate-300">Port</span>
-        <input name="port" required type="number" min="1" max="65535" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
-      </label>
-    </div>
-    <label class="block">
-      <span class="text-sm text-slate-300">Comment</span>
-      <input name="comment" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
-    </label>
-    <label class="inline-flex items-center gap-2">
-      <input type="checkbox" name="enabled" checked />
-      <span>Enabled</span>
-    </label>
-    <button type="submit" class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Add Rule</button>
-  </form>
-  </div>
-</dialog>
-{% endif %}
 {% endblock %}

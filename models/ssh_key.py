@@ -10,7 +10,7 @@ from models.base import Base
 
 class SSHKey(Base):
     __tablename__ = "ssh_keys"
-    __table_args__ = (UniqueConstraint("tunnel_user_id", "public_key", name="uq_user_public_key"),)
+    __table_args__ = (UniqueConstraint("public_key", name="uq_public_key"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     tunnel_user_id: Mapped[int] = mapped_column(ForeignKey("tunnel_users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -21,3 +21,8 @@ class SSHKey(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     tunnel_user = relationship("TunnelUser", back_populates="ssh_keys")
+    permit_rules = relationship(
+        "PermitOpenRule",
+        secondary="ssh_key_permit_rules",
+        back_populates="ssh_keys",
+    )

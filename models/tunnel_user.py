@@ -18,4 +18,3 @@ class TunnelUser(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     ssh_keys = relationship("SSHKey", back_populates="tunnel_user", cascade="all, delete-orphan")
-    permit_open_rules = relationship("PermitOpenRule", back_populates="tunnel_user", cascade="all, delete-orphan")

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% set title = "Key access" %}
+{% block content %}
+<section class="mb-6">
+  <a href="/keys" class="text-sm text-slate-400 hover:text-slate-200">← Back to keys</a>
+  <h1 class="text-xl font-semibold mt-2">{{ key.name }}</h1>
+  <p class="text-sm text-slate-400">Tunnel user: <span class="text-slate-200">{{ key.tunnel_user.username }}</span></p>
+  <p class="font-mono text-xs text-slate-500 mt-1 break-all">{{ key.fingerprint }}</p>
+</section>
+
+<section class="rounded-lg border border-slate-800 bg-slate-900 p-4 mb-4">
+  <div class="flex flex-wrap gap-2 items-center justify-between">
+    <div>
+      {% if key.enabled %}
+      <span class="rounded bg-emerald-900/40 text-emerald-300 px-2 py-1 text-xs">Enabled</span>
+      {% else %}
+      <span class="rounded bg-slate-800 text-slate-300 px-2 py-1 text-xs">Disabled</span>
+      {% endif %}
+    </div>
+    {% if not readonly_mode %}
+    <div class="flex gap-2">
+      <form method="post" action="/keys/{{ key.id }}/toggle">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="hidden" name="enabled" value="{{ 'false' if key.enabled else 'true' }}" />
+        <button class="rounded bg-amber-800/50 hover:bg-amber-800 px-3 py-2 text-sm">{{ 'Disable' if key.enabled else 'Enable' }}</button>
+      </form>
+      <form method="post" action="/keys/{{ key.id }}/delete" onsubmit="return confirm('Delete this key?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <button class="rounded bg-rose-800/50 hover:bg-rose-800 px-3 py-2 text-sm">Delete</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="rounded-lg border border-slate-800 bg-slate-900 p-4">
+  <h2 class="text-lg font-semibold mb-1">Destinations for this key</h2>
+  <p class="text-sm text-slate-400 mb-4">Only checked destinations are written into <code class="text-xs">authorized_keys</code> for this key.</p>
+
+  {% if not readonly_mode %}
+  <form method="post" action="/keys/{{ key.id }}/access" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    {% if all_rules %}
+    <div class="grid sm:grid-cols-2 gap-2">
+      {% for rule in all_rules %}
+      <label class="flex items-start gap-2 rounded border border-slate-800 p-3 {% if not rule.enabled %}opacity-50{% endif %}">
+        <input
+          type="checkbox"
+          name="permit_rule_ids"
+          value="{{ rule.id }}"
+          {% if rule.id in assigned_ids %}checked{% endif %}
+          {% if not rule.enabled %}disabled{% endif %}
+          class="mt-1"
+        />
+        <span class="text-sm">
+          <span class="font-medium">{{ rule.alias }}</span>
+          <span class="block font-mono text-xs text-slate-500">{{ rule.host }}:{{ rule.port }}</span>
+          {% if not rule.enabled %}<span class="text-amber-400 text-xs">(disabled globally)</span>{% endif %}
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+    <button type="submit" class="rounded bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium">Save access</button>
+    {% else %}
+    <p class="text-amber-400 text-sm">No destinations defined. <a href="/destinations" class="underline">Add destinations</a> first.</p>
+    {% endif %}
+  </form>
+  {% else %}
+  <ul class="space-y-2 text-sm">
+    {% for rule in key.permit_rules %}
+    <li class="font-mono text-xs">{{ rule.alias }} — {{ rule.host }}:{{ rule.port }}</li>
+    {% else %}
+    <li class="text-slate-500">No destinations assigned.</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endblock %}

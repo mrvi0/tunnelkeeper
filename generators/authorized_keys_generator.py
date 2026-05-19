@@ -17,8 +17,14 @@ def render_authorized_key_line(key: SSHKey, rules: list[PermitOpenRule]) -> str:
     return f"{','.join(options)} {key.public_key.strip()}"
 
 
-def render_authorized_keys(keys: list[SSHKey], rules: list[PermitOpenRule]) -> str:
-    enabled_keys = [key for key in keys if key.enabled]
-    lines = [render_authorized_key_line(key, rules) for key in enabled_keys]
+def render_authorized_keys(keys: list[SSHKey]) -> str:
+    lines: list[str] = []
+    for key in keys:
+        if not key.enabled:
+            continue
+        rules = [rule for rule in key.permit_rules if rule.enabled]
+        if not rules:
+            continue
+        lines.append(render_authorized_key_line(key, rules))
     text = "\n".join(lines).strip()
     return f"{text}\n" if text else ""

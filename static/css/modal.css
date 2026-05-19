@@ -45,3 +45,11 @@ dialog[data-modal] [data-modal-panel] {
 #create-user-modal [data-modal-panel] {
   --modal-width: 32rem;
 }
+
+#add-key-modal [data-modal-panel] {
+  --modal-width: 42rem;
+}
+
+#add-destination-modal [data-modal-panel] {
+  --modal-width: 36rem;
+}
