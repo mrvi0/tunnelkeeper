@@ -66,6 +66,7 @@ class TunnelAccessService:
         user = self.user_repo.get(tunnel_user_id)
         if not user:
             raise NotFoundError("Tunnel user not found.")
+        self.linux_service.delete_linux_user(user.username, user.linux_home)
         self.user_repo.delete(user)
 
     def add_ssh_key(self, payload: SSHKeyCreate, permit_rule_ids: list[int]):
