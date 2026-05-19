@@ -50,6 +50,6 @@ dialog[data-modal] [data-modal-panel] {
   --modal-width: 42rem;
 }
 
-#add-destination-modal [data-modal-panel] {
+#add-rule-modal [data-modal-panel] {
   --modal-width: 36rem;
 }

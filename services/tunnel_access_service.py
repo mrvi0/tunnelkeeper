@@ -34,14 +34,16 @@ class TunnelAccessService:
         if self.settings.readonly_mode:
             raise ReadOnlyModeError("Readonly mode is enabled.")
 
-    def _validate_rule_ids(self, rule_ids: list[int]) -> list[int]:
+    def _validate_rule_ids_for_user(self, tunnel_user_id: int, rule_ids: list[int]) -> list[int]:
         unique_ids = sorted(set(rule_ids))
         for rule_id in unique_ids:
             rule = self.rule_repo.get(rule_id)
             if not rule:
-                raise ValidationError(f"Destination rule {rule_id} not found.")
+                raise ValidationError(f"PermitOpen rule {rule_id} not found.")
+            if rule.tunnel_user_id != tunnel_user_id:
+                raise ValidationError("Rule does not belong to this tunnel user.")
             if not rule.enabled:
-                raise ValidationError(f"Destination '{rule.alias}' is disabled.")
+                raise ValidationError(f"Rule '{rule.alias}' is disabled.")
         return unique_ids
 
     def create_tunnel_user(self, payload: TunnelUserCreate):
@@ -73,9 +75,9 @@ class TunnelAccessService:
             raise NotFoundError("Tunnel user not found.")
         parse_public_key(payload.public_key)
         fingerprint = fingerprint_ssh_key(payload.public_key)
-        validated_rules = self._validate_rule_ids(permit_rule_ids)
+        validated_rules = self._validate_rule_ids_for_user(payload.tunnel_user_id, permit_rule_ids)
         if not validated_rules:
-            raise ValidationError("Select at least one destination for this key.")
+            raise ValidationError("Select at least one PermitOpen rule for this key.")
         try:
             key = self.key_repo.create(
                 tunnel_user_id=payload.tunnel_user_id,
@@ -95,9 +97,9 @@ class TunnelAccessService:
         key = self.key_repo.get(key_id)
         if not key:
             raise NotFoundError("SSH key not found.")
-        validated_rules = self._validate_rule_ids(permit_rule_ids)
+        validated_rules = self._validate_rule_ids_for_user(key.tunnel_user_id, permit_rule_ids)
         if not validated_rules:
-            raise ValidationError("Select at least one destination for this key.")
+            raise ValidationError("Select at least one PermitOpen rule for this key.")
         self.key_permit_repo.set_rules_for_key(key_id, validated_rules)
         self.auth_keys_service.regenerate(key.tunnel_user_id)
 
@@ -118,36 +120,40 @@ class TunnelAccessService:
         self.key_repo.delete(key)
         self.auth_keys_service.regenerate(tunnel_user_id)
 
-    def add_permit_rule(self, payload: PermitOpenCreate):
+    def add_permit_rule(self, tunnel_user_id: int, payload: PermitOpenCreate):
         self._assert_write_allowed()
+        user = self.user_repo.get(tunnel_user_id)
+        if not user:
+            raise NotFoundError("Tunnel user not found.")
         try:
-            return self.rule_repo.create(
+            rule = self.rule_repo.create(
+                tunnel_user_id=tunnel_user_id,
                 alias=payload.alias,
                 host=payload.host,
                 port=payload.port,
                 comment=payload.comment,
                 enabled=payload.enabled,
             )
+            return rule
         except IntegrityError as exc:
-            raise ValidationError("Destination with this host:port already exists.") from exc
+            raise ValidationError("PermitOpen rule with this host:port already exists for this user.") from exc
 
     def toggle_rule(self, rule_id: int, enabled: bool) -> None:
         self._assert_write_allowed()
         rule = self.rule_repo.get(rule_id)
         if not rule:
-            raise NotFoundError("Destination not found.")
+            raise NotFoundError("PermitOpen rule not found.")
         self.rule_repo.set_enabled(rule, enabled=enabled)
-        user_ids = self.key_permit_repo.list_user_ids_for_rule(rule_id)
-        self.auth_keys_service.regenerate_many(user_ids)
+        self.auth_keys_service.regenerate(rule.tunnel_user_id)
 
     def delete_rule(self, rule_id: int) -> None:
         self._assert_write_allowed()
         rule = self.rule_repo.get(rule_id)
         if not rule:
-            raise NotFoundError("Destination not found.")
-        user_ids = self.key_permit_repo.list_user_ids_for_rule(rule_id)
+            raise NotFoundError("PermitOpen rule not found.")
+        tunnel_user_id = rule.tunnel_user_id
         self.rule_repo.delete(rule)
-        self.auth_keys_service.regenerate_many(user_ids)
+        self.auth_keys_service.regenerate(tunnel_user_id)
 
     def regenerate(self, tunnel_user_id: int) -> None:
         self._assert_write_allowed()

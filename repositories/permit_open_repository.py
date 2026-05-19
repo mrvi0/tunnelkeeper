@@ -10,14 +10,10 @@ class PermitOpenRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def list_all(self) -> list[PermitOpenRule]:
-        stmt = select(PermitOpenRule).order_by(PermitOpenRule.alias, PermitOpenRule.host)
-        return list(self.db.scalars(stmt).all())
-
-    def list_enabled(self) -> list[PermitOpenRule]:
+    def list_by_user(self, tunnel_user_id: int) -> list[PermitOpenRule]:
         stmt = (
             select(PermitOpenRule)
-            .where(PermitOpenRule.enabled.is_(True))
+            .where(PermitOpenRule.tunnel_user_id == tunnel_user_id)
             .order_by(PermitOpenRule.alias, PermitOpenRule.host)
         )
         return list(self.db.scalars(stmt).all())
@@ -31,6 +27,7 @@ class PermitOpenRepository:
     def create(
         self,
         *,
+        tunnel_user_id: int,
         alias: str,
         host: str,
         port: int,
@@ -38,6 +35,7 @@ class PermitOpenRepository:
         enabled: bool,
     ) -> PermitOpenRule:
         entity = PermitOpenRule(
+            tunnel_user_id=tunnel_user_id,
             alias=alias,
             host=host,
             port=port,

@@ -2,9 +2,8 @@
 {% set title = "Key access" %}
 {% block content %}
 <section class="mb-6">
-  <a href="/keys" class="text-sm text-slate-400 hover:text-slate-200">← Back to keys</a>
+  <a href="/users/{{ key.tunnel_user.id }}" class="text-sm text-slate-400 hover:text-slate-200">← {{ key.tunnel_user.username }}</a>
   <h1 class="text-xl font-semibold mt-2">{{ key.name }}</h1>
-  <p class="text-sm text-slate-400">Tunnel user: <span class="text-slate-200">{{ key.tunnel_user.username }}</span></p>
   <p class="font-mono text-xs text-slate-500 mt-1 break-all">{{ key.fingerprint }}</p>
 </section>
 
@@ -34,8 +33,11 @@
 </section>
 
 <section class="rounded-lg border border-slate-800 bg-slate-900 p-4">
-  <h2 class="text-lg font-semibold mb-1">Destinations for this key</h2>
-  <p class="text-sm text-slate-400 mb-4">Only checked destinations are written into <code class="text-xs">authorized_keys</code> for this key.</p>
+  <h2 class="text-lg font-semibold mb-1">PermitOpen access</h2>
+  <p class="text-sm text-slate-400 mb-4">
+    Select which rules from <strong>{{ key.tunnel_user.username }}</strong> apply to this key.
+    <a href="/users/{{ key.tunnel_user.id }}" class="text-sky-400 hover:text-sky-300">Manage rules</a>
+  </p>
 
   {% if not readonly_mode %}
   <form method="post" action="/keys/{{ key.id }}/access" class="space-y-4">
@@ -55,14 +57,17 @@
         <span class="text-sm">
           <span class="font-medium">{{ rule.alias }}</span>
           <span class="block font-mono text-xs text-slate-500">{{ rule.host }}:{{ rule.port }}</span>
-          {% if not rule.enabled %}<span class="text-amber-400 text-xs">(disabled globally)</span>{% endif %}
+          {% if not rule.enabled %}<span class="text-amber-400 text-xs">(disabled)</span>{% endif %}
         </span>
       </label>
       {% endfor %}
     </div>
     <button type="submit" class="rounded bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium">Save access</button>
     {% else %}
-    <p class="text-amber-400 text-sm">No destinations defined. <a href="/destinations" class="underline">Add destinations</a> first.</p>
+    <p class="text-amber-400 text-sm">
+      No PermitOpen rules for this user.
+      <a href="/users/{{ key.tunnel_user.id }}" class="underline">Add rules</a> first.
+    </p>
     {% endif %}
   </form>
   {% else %}
@@ -70,7 +75,7 @@
     {% for rule in key.permit_rules %}
     <li class="font-mono text-xs">{{ rule.alias }} — {{ rule.host }}:{{ rule.port }}</li>
     {% else %}
-    <li class="text-slate-500">No destinations assigned.</li>
+    <li class="text-slate-500">No rules assigned.</li>
     {% endfor %}
   </ul>
   {% endif %}
