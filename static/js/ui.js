@@ -1,28 +1,55 @@
 (() => {
+  function clickTarget(event) {
+    const target = event.target;
+    return target instanceof Element ? target : null;
+  }
+
+  function openModal(modal) {
+    if (!modal || typeof modal.showModal !== "function") {
+      return;
+    }
+    modal.showModal();
+  }
+
+  function closeModal(modal) {
+    if (!modal || typeof modal.close !== "function") {
+      return;
+    }
+    modal.close();
+  }
+
   document.addEventListener("click", (event) => {
-    const openTrigger = event.target.closest("[data-open-modal]");
-    if (openTrigger) {
-      event.preventDefault();
-      const modalId = openTrigger.getAttribute("data-open-modal");
-      const modal = modalId ? document.getElementById(modalId) : null;
-      if (modal && typeof modal.showModal === "function") {
-        modal.showModal();
-      }
+    const target = clickTarget(event);
+    if (!target) {
       return;
     }
 
-    const closeTrigger = event.target.closest("[data-close-modal]");
+    const openTrigger = target.closest("[data-open-modal]");
+    if (openTrigger) {
+      event.preventDefault();
+      const modalId = openTrigger.getAttribute("data-open-modal");
+      openModal(modalId ? document.getElementById(modalId) : null);
+      return;
+    }
+
+    const closeTrigger = target.closest("[data-close-modal]");
     if (closeTrigger) {
       event.preventDefault();
-      const modal = closeTrigger.closest("dialog");
-      if (modal && typeof modal.close === "function") {
-        modal.close();
+      closeModal(closeTrigger.closest("dialog"));
+      return;
+    }
+
+    const dialog = target.closest("dialog");
+    if (dialog && dialog.open) {
+      const panel = dialog.querySelector("[data-modal-panel]");
+      if (panel && !panel.contains(target)) {
+        closeModal(dialog);
       }
     }
   });
 
   document.addEventListener("input", (event) => {
-    const input = event.target.closest("[data-search-target]");
+    const input = clickTarget(event)?.closest("[data-search-target]");
     if (!input) {
       return;
     }
@@ -35,14 +62,6 @@
     table.querySelectorAll("tbody tr").forEach((row) => {
       const text = row.textContent?.toLowerCase() || "";
       row.style.display = text.includes(query) ? "" : "none";
-    });
-  });
-
-  document.addEventListener("htmx:afterSwap", () => {
-    document.querySelectorAll("dialog[open]").forEach((modal) => {
-      if (typeof modal.close === "function") {
-        modal.close();
-      }
     });
   });
 })();

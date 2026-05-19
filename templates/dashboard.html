@@ -83,7 +83,8 @@
   </div>
 </section>
 
-<dialog id="create-user-modal" class="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-0 text-slate-100 backdrop:bg-black/60">
+<dialog id="create-user-modal" data-modal>
+  <div data-modal-panel class="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 text-slate-100 shadow-xl">
   <div class="p-4 border-b border-slate-800 flex items-center justify-between">
     <h3 class="font-semibold">Create Tunnel User</h3>
     <button type="button" data-close-modal class="text-slate-400 hover:text-slate-200" aria-label="Close">×</button>
@@ -102,7 +103,8 @@
       <span class="text-sm text-slate-300">Linux Home (optional)</span>
       <input name="linux_home" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" placeholder="/home/username" />
     </label>
-    <button class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Create</button>
+    <button type="submit" class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Create</button>
   </form>
+  </div>
 </dialog>
 {% endblock %}
