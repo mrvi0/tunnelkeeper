@@ -2,28 +2,46 @@ dialog:not([open]) {
   display: none;
 }
 
-dialog[open] {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.6);
-}
-
 dialog[data-modal] {
   position: fixed;
   inset: 0;
   z-index: 50;
-  margin: 0;
+  width: 100%;
+  height: 100%;
   max-width: none;
   max-height: none;
+  margin: 0;
+  padding: 1rem;
   border: 0;
   background: transparent;
-  padding: 1rem;
+  overflow: auto;
+  transform: none;
 }
 
-[data-modal-panel] {
-  width: 100%;
+dialog[data-modal][open] {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+dialog[data-modal]::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+dialog[data-modal] [data-modal-panel] {
+  flex-shrink: 0;
+  width: min(100%, var(--modal-width, 32rem));
+  margin: auto;
+}
+
+#add-key-modal [data-modal-panel] {
+  --modal-width: 42rem;
+}
+
+#add-rule-modal [data-modal-panel] {
+  --modal-width: 36rem;
+}
+
+#create-user-modal [data-modal-panel] {
+  --modal-width: 32rem;
 }
