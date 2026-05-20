@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% set title = "Key access" %}
+{% set title = "Key settings" %}
 {% block content %}
 <section class="mb-6">
-  <a href="/users/{{ key.tunnel_user.id }}" class="text-sm text-slate-400 hover:text-slate-200">← {{ key.tunnel_user.username }}</a>
+  <a href="/keys" class="text-sm text-slate-400 hover:text-slate-200">← SSH Keys</a>
   <h1 class="text-xl font-semibold mt-2">{{ key.name }}</h1>
   <p class="font-mono text-xs text-slate-500 mt-1 break-all">{{ key.fingerprint }}</p>
 </section>
@@ -15,6 +15,9 @@
       {% else %}
       <span class="rounded bg-slate-800 text-slate-300 px-2 py-1 text-xs">Disabled</span>
       {% endif %}
+      <span class="text-sm text-slate-400 ml-2">Assigned to:
+        {% for u in key.tunnel_users %}{{ u.username }}{% if not loop.last %}, {% endif %}{% else %}none{% endfor %}
+      </span>
     </div>
     {% if not readonly_mode %}
     <div class="flex gap-2">
@@ -23,7 +26,7 @@
         <input type="hidden" name="enabled" value="{{ 'false' if key.enabled else 'true' }}" />
         <button class="rounded bg-amber-800/50 hover:bg-amber-800 px-3 py-2 text-sm">{{ 'Disable' if key.enabled else 'Enable' }}</button>
       </form>
-      <form method="post" action="/keys/{{ key.id }}/delete" onsubmit="return confirm('Delete this key?')">
+      <form method="post" action="/keys/{{ key.id }}/delete" onsubmit="return confirm('Delete this key from all users?')">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <button class="rounded bg-rose-800/50 hover:bg-rose-800 px-3 py-2 text-sm">Delete</button>
       </form>
@@ -32,52 +35,55 @@
   </div>
 </section>
 
-<section class="rounded-lg border border-slate-800 bg-slate-900 p-4">
-  <h2 class="text-lg font-semibold mb-1">PermitOpen access</h2>
-  <p class="text-sm text-slate-400 mb-4">
-    Select which rules from <strong>{{ key.tunnel_user.username }}</strong> apply to this key.
-    <a href="/users/{{ key.tunnel_user.id }}" class="text-sky-400 hover:text-sky-300">Manage rules</a>
-  </p>
+{% for section in user_sections %}
+<section class="rounded-lg border border-slate-800 bg-slate-900 p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-1">
+    <a href="/users/{{ section.user.id }}" class="text-sky-400 hover:text-sky-300">{{ section.user.username }}</a>
+  </h2>
+  <p class="text-sm text-slate-400 mb-4">PermitOpen rules for this key on account <strong>{{ section.user.username }}</strong></p>
 
   {% if not readonly_mode %}
-  <form method="post" action="/keys/{{ key.id }}/access" class="space-y-4">
+  <form method="post" action="/keys/{{ key.id }}/users/{{ section.user.id }}/access" class="space-y-3">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    {% if all_rules %}
+    {% if section.all_rules %}
     <div class="grid sm:grid-cols-2 gap-2">
-      {% for rule in all_rules %}
+      {% for rule in section.all_rules %}
       <label class="flex items-start gap-2 rounded border border-slate-800 p-3 {% if not rule.enabled %}opacity-50{% endif %}">
         <input
           type="checkbox"
           name="permit_rule_ids"
           value="{{ rule.id }}"
-          {% if rule.id in assigned_ids %}checked{% endif %}
+          {% if rule.id in section.assigned_ids %}checked{% endif %}
           {% if not rule.enabled %}disabled{% endif %}
           class="mt-1"
         />
         <span class="text-sm">
           <span class="font-medium">{{ rule.alias }}</span>
           <span class="block font-mono text-xs text-slate-500">{{ rule.host }}:{{ rule.port }}</span>
-          {% if not rule.enabled %}<span class="text-amber-400 text-xs">(disabled)</span>{% endif %}
         </span>
       </label>
       {% endfor %}
     </div>
-    <button type="submit" class="rounded bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium">Save access</button>
+    <button type="submit" class="rounded bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium">Save for {{ section.user.username }}</button>
     {% else %}
     <p class="text-amber-400 text-sm">
-      No PermitOpen rules for this user.
-      <a href="/users/{{ key.tunnel_user.id }}" class="underline">Add rules</a> first.
+      No rules for this user. <a href="/users/{{ section.user.id }}" class="underline">Add PermitOpen</a>.
     </p>
     {% endif %}
   </form>
   {% else %}
-  <ul class="space-y-2 text-sm">
-    {% for rule in key.permit_rules %}
+  <ul class="text-sm space-y-1">
+    {% for rule in section.all_rules %}
+    {% if rule.id in section.assigned_ids %}
     <li class="font-mono text-xs">{{ rule.alias }} — {{ rule.host }}:{{ rule.port }}</li>
+    {% endif %}
     {% else %}
     <li class="text-slate-500">No rules assigned.</li>
     {% endfor %}
   </ul>
   {% endif %}
 </section>
+{% else %}
+<p class="text-slate-500">This key is not assigned to any tunnel user.</p>
+{% endfor %}
 {% endblock %}

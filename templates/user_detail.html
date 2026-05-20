@@ -85,36 +85,35 @@
   <div class="rounded-lg border border-slate-800 bg-slate-900 p-4">
     <div class="flex items-center justify-between mb-3">
       <h2 class="text-lg font-semibold">SSH Keys</h2>
-      {% if not readonly_mode %}
-      <button data-open-modal="add-key-modal" class="rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 text-sm" {% if not rules %}disabled title="Add PermitOpen rules first"{% endif %}>Add Key</button>
-      {% endif %}
+      <a href="/keys" class="rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 text-sm">Add key (global)</a>
     </div>
+    <p class="text-sm text-slate-400 mb-3">Keys are added on the <a href="/keys" class="text-sky-400 hover:text-sky-300">SSH Keys</a> page and can be linked to multiple users.</p>
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="text-slate-400">
           <tr class="border-b border-slate-800">
             <th class="text-left py-2">Name</th>
-            <th class="text-left py-2">Access</th>
+            <th class="text-left py-2">PermitOpen (this user)</th>
             <th class="text-left py-2">Status</th>
             <th class="text-left py-2">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {% for key in keys %}
+          {% for row in key_rows %}
           <tr class="border-b border-slate-800/60">
-            <td class="py-2">{{ key.name }}</td>
+            <td class="py-2">{{ row.key.name }}</td>
             <td class="py-2 text-slate-300 text-xs">
-              {% if key.permit_rules %}{{ key.permit_rules | map(attribute='alias') | join(', ') }}{% else %}<span class="text-amber-400">none</span>{% endif %}
+              {% if row.rules %}{{ row.rules | map(attribute='alias') | join(', ') }}{% else %}<span class="text-amber-400">none</span>{% endif %}
             </td>
             <td class="py-2">
-              {% if key.enabled %}<span class="text-emerald-400 text-xs">on</span>{% else %}<span class="text-slate-500 text-xs">off</span>{% endif %}
+              {% if row.key.enabled %}<span class="text-emerald-400 text-xs">on</span>{% else %}<span class="text-slate-500 text-xs">off</span>{% endif %}
             </td>
             <td class="py-2">
-              <a href="/keys/{{ key.id }}" class="text-sky-400 hover:text-sky-300">Access</a>
+              <a href="/keys/{{ row.key.id }}" class="text-sky-400 hover:text-sky-300">Settings</a>
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="4" class="py-4 text-slate-500">No keys yet.</td></tr>
+          <tr><td colspan="4" class="py-4 text-slate-500">No keys linked to this user.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -150,44 +149,6 @@
         <input name="comment" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
       </label>
       <button type="submit" class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Add Rule</button>
-    </form>
-  </div>
-</dialog>
-
-<dialog id="add-key-modal" data-modal>
-  <div data-modal-panel class="rounded-xl border border-slate-700 bg-slate-900 text-slate-100 shadow-xl max-h-[90vh] overflow-y-auto">
-    <div class="p-4 border-b border-slate-800 flex items-center justify-between sticky top-0 bg-slate-900">
-      <h3 class="font-semibold">Add SSH Key</h3>
-      <button type="button" data-close-modal class="text-slate-400 hover:text-slate-200" aria-label="Close">×</button>
-    </div>
-    <form method="post" action="/users/{{ user.id }}/keys" class="p-4 space-y-3">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      <label class="block">
-        <span class="text-sm text-slate-300">Name</span>
-        <input name="name" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
-      </label>
-      <label class="block">
-        <span class="text-sm text-slate-300">Public key</span>
-        <textarea name="public_key" required rows="4" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2 font-mono text-xs"></textarea>
-      </label>
-      <fieldset class="border border-slate-700 rounded-lg p-3">
-        <legend class="text-sm text-slate-300 px-1">PermitOpen access for this key</legend>
-        <div class="space-y-2 max-h-48 overflow-y-auto">
-          {% for rule in rules %}
-          {% if rule.enabled %}
-          <label class="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="permit_rule_ids" value="{{ rule.id }}" />
-            <span>{{ rule.alias }} <span class="text-slate-500 font-mono text-xs">{{ rule.host }}:{{ rule.port }}</span></span>
-          </label>
-          {% endif %}
-          {% endfor %}
-        </div>
-      </fieldset>
-      <label class="inline-flex items-center gap-2">
-        <input type="checkbox" name="enabled" checked />
-        <span>Enabled</span>
-      </label>
-      <button type="submit" class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Add Key</button>
     </form>
   </div>
 </dialog>

@@ -17,5 +17,11 @@ class TunnelUser(Base):
     linux_home: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    ssh_keys = relationship("SSHKey", back_populates="tunnel_user", cascade="all, delete-orphan")
+    key_assignments = relationship("SSHKeyUserAssignment", back_populates="tunnel_user", cascade="all, delete-orphan")
+    ssh_keys = relationship(
+        "SSHKey",
+        secondary="ssh_key_user_assignments",
+        back_populates="tunnel_users",
+        viewonly=True,
+    )
     permit_open_rules = relationship("PermitOpenRule", back_populates="tunnel_user", cascade="all, delete-orphan")

@@ -93,21 +93,57 @@ def keys_page(
     admin: dict = Depends(require_admin),
     _: None = Depends(with_session_guard),
 ):
+    from repositories.permit_open_repository import PermitOpenRepository
     from repositories.ssh_key_repository import SSHKeyRepository
 
     keys = SSHKeyRepository(db).list_all()
+    users = list(db.scalars(select(TunnelUser).order_by(TunnelUser.username)).all())
+    users_with_rules = [
+        {"user": user, "rules": PermitOpenRepository(db).list_by_user(user.id)}
+        for user in users
+    ]
     return templates.TemplateResponse(
         request=request,
         name="keys.html",
         context={
             "admin": admin,
             "keys": keys,
+            "users_with_rules": users_with_rules,
             "csrf_token": ensure_csrf(request),
             "message": request.query_params.get("message"),
             "error": request.query_params.get("error"),
             "readonly_mode": settings.readonly_mode,
         },
     )
+
+
+@router.post("/keys")
+def create_key(
+    request: Request,
+    name: str = Form(...),
+    public_key: str = Form(...),
+    enabled: bool = Form(True),
+    tunnel_user_ids: Annotated[list[int], Form()] = [],
+    permit_rule_ids: Annotated[list[int], Form()] = [],
+    csrf_token: str = Form(...),
+    db: Session = Depends(db_session),
+    admin: dict = Depends(require_admin),
+    _: None = Depends(with_session_guard),
+):
+    validate_csrf(request, csrf_token)
+    service = TunnelAccessService(db)
+    payload = SSHKeyCreate(name=name, public_key=public_key, enabled=enabled)
+    ok, result = _perform_mutation(
+        db=db,
+        actor=admin["username"],
+        action="add_ssh_key",
+        target=f"key:{name}",
+        details=f"users={tunnel_user_ids} rules={permit_rule_ids}",
+        execute=lambda: service.add_ssh_key(payload, tunnel_user_ids, permit_rule_ids),
+    )
+    if ok:
+        return RedirectResponse(url="/keys?message=Key%20added", status_code=303)
+    return RedirectResponse(url=f"/keys?error={quote_plus(result)}", status_code=303)
 
 
 @router.get("/keys/{key_id}")
@@ -118,23 +154,32 @@ def key_detail(
     admin: dict = Depends(require_admin),
     _: None = Depends(with_session_guard),
 ):
+    from repositories.key_assignment_repository import KeyAssignmentRepository
+    from repositories.key_permit_repository import KeyPermitRepository
+    from repositories.permit_open_repository import PermitOpenRepository
     from repositories.ssh_key_repository import SSHKeyRepository
 
     key = SSHKeyRepository(db).get(key_id)
     if not key:
         raise HTTPException(status_code=404, detail="Key not found")
-    from repositories.permit_open_repository import PermitOpenRepository
 
-    all_rules = PermitOpenRepository(db).list_by_user(key.tunnel_user_id)
-    assigned_ids = {rule.id for rule in key.permit_rules}
+    key_permit_repo = KeyPermitRepository(db)
+    user_sections = []
+    for user in KeyAssignmentRepository(db).list_users_for_key(key_id):
+        user_sections.append(
+            {
+                "user": user,
+                "all_rules": PermitOpenRepository(db).list_by_user(user.id),
+                "assigned_ids": set(key_permit_repo.list_rule_ids_for_key_user(key_id, user.id)),
+            }
+        )
     return templates.TemplateResponse(
         request=request,
         name="key_detail.html",
         context={
             "admin": admin,
             "key": key,
-            "all_rules": all_rules,
-            "assigned_ids": assigned_ids,
+            "user_sections": user_sections,
             "csrf_token": ensure_csrf(request),
             "message": request.query_params.get("message"),
             "error": request.query_params.get("error"),
@@ -143,9 +188,10 @@ def key_detail(
     )
 
 
-@router.post("/keys/{key_id}/access")
-def update_key_access(
+@router.post("/keys/{key_id}/users/{user_id}/access")
+def update_key_access_for_user(
     key_id: int,
+    user_id: int,
     request: Request,
     permit_rule_ids: Annotated[list[int], Form()] = [],
     csrf_token: str = Form(...),
@@ -159,9 +205,9 @@ def update_key_access(
         db=db,
         actor=admin["username"],
         action="update_key_access",
-        target=f"key_id:{key_id}",
+        target=f"key_id:{key_id}:user_id:{user_id}",
         details=f"rules={permit_rule_ids}",
-        execute=lambda: service.set_key_access(key_id, permit_rule_ids),
+        execute=lambda: service.set_key_access_for_user(key_id, user_id, permit_rule_ids),
     )
     if ok:
         return RedirectResponse(url=f"/keys/{key_id}?message=Access%20updated", status_code=303)
@@ -228,13 +274,22 @@ def user_details(
     admin: dict = Depends(require_admin),
     _: None = Depends(with_session_guard),
 ):
+    from repositories.key_permit_repository import KeyPermitRepository
     from repositories.permit_open_repository import PermitOpenRepository
     from repositories.ssh_key_repository import SSHKeyRepository
 
     user = db.get(TunnelUser, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    keys = SSHKeyRepository(db).list_by_user(user_id)
+    key_permit_repo = KeyPermitRepository(db)
+    key_rows = []
+    for key in SSHKeyRepository(db).list_by_user(user_id):
+        key_rows.append(
+            {
+                "key": key,
+                "rules": key_permit_repo.list_rules_for_key_user(key.id, user_id),
+            }
+        )
     rules = PermitOpenRepository(db).list_by_user(user_id)
     return templates.TemplateResponse(
         request=request,
@@ -242,7 +297,7 @@ def user_details(
         context={
             "admin": admin,
             "user": user,
-            "keys": keys,
+            "key_rows": key_rows,
             "rules": rules,
             "csrf_token": ensure_csrf(request),
             "message": request.query_params.get("message"),
@@ -250,35 +305,6 @@ def user_details(
             "readonly_mode": settings.readonly_mode,
         },
     )
-
-
-@router.post("/users/{user_id}/keys")
-def add_user_key(
-    user_id: int,
-    request: Request,
-    name: str = Form(...),
-    public_key: str = Form(...),
-    enabled: bool = Form(True),
-    permit_rule_ids: Annotated[list[int], Form()] = [],
-    csrf_token: str = Form(...),
-    db: Session = Depends(db_session),
-    admin: dict = Depends(require_admin),
-    _: None = Depends(with_session_guard),
-):
-    validate_csrf(request, csrf_token)
-    service = TunnelAccessService(db)
-    payload = SSHKeyCreate(tunnel_user_id=user_id, name=name, public_key=public_key, enabled=enabled)
-    ok, result = _perform_mutation(
-        db=db,
-        actor=admin["username"],
-        action="add_ssh_key",
-        target=f"user_id:{user_id}",
-        details=f"key_name={name} rules={permit_rule_ids}",
-        execute=lambda: service.add_ssh_key(payload, permit_rule_ids),
-    )
-    if ok:
-        return RedirectResponse(url=f"/users/{user_id}?message=Key%20added", status_code=303)
-    return RedirectResponse(url=f"/users/{user_id}?error={quote_plus(result)}", status_code=303)
 
 
 @router.post("/users/{user_id}/rules")

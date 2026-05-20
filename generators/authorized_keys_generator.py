@@ -11,20 +11,25 @@ FORCED_OPTIONS = [
 ]
 
 
-def render_authorized_key_line(key: SSHKey, rules: list[PermitOpenRule]) -> str:
+def render_authorized_key_line(public_key: str, rules: list[PermitOpenRule]) -> str:
     permit_options = [f'permitopen="{rule.host}:{rule.port}"' for rule in rules if rule.enabled]
     options = FORCED_OPTIONS + permit_options
-    return f"{','.join(options)} {key.public_key.strip()}"
+    return f"{','.join(options)} {public_key.strip()}"
 
 
-def render_authorized_keys(keys: list[SSHKey]) -> str:
+def render_authorized_keys_for_user(
+    keys: list[SSHKey],
+    tunnel_user_id: int,
+    rules_by_key: dict[int, list[PermitOpenRule]],
+) -> str:
     lines: list[str] = []
     for key in keys:
         if not key.enabled:
             continue
-        rules = [rule for rule in key.permit_rules if rule.enabled]
-        if not rules:
+        rules = rules_by_key.get(key.id, [])
+        enabled_rules = [rule for rule in rules if rule.enabled]
+        if not enabled_rules:
             continue
-        lines.append(render_authorized_key_line(key, rules))
+        lines.append(render_authorized_key_line(key.public_key, enabled_rules))
     text = "\n".join(lines).strip()
     return f"{text}\n" if text else ""

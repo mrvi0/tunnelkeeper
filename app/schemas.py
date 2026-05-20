@@ -53,7 +53,6 @@ class TunnelUserUpdate(BaseModel):
 
 
 class SSHKeyCreate(BaseModel):
-    tunnel_user_id: int
     name: str = Field(min_length=1, max_length=100)
     public_key: str = Field(min_length=20)
     enabled: bool = True

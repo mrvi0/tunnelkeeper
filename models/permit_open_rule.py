@@ -22,8 +22,3 @@ class PermitOpenRule(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     tunnel_user = relationship("TunnelUser", back_populates="permit_open_rules")
-    ssh_keys = relationship(
-        "SSHKey",
-        secondary="ssh_key_permit_rules",
-        back_populates="permit_rules",
-    )

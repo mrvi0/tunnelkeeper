@@ -64,4 +64,21 @@
       row.style.display = text.includes(query) ? "" : "none";
     });
   });
+
+  function syncUserRulesVisibility(userId, checked) {
+    document.querySelectorAll(`[data-user-rules="${userId}"]`).forEach((el) => {
+      el.classList.toggle("hidden", !checked);
+    });
+  }
+
+  document.querySelectorAll("[data-user-toggle]").forEach((checkbox) => {
+    const userId = checkbox.getAttribute("data-user-toggle");
+    if (!userId) {
+      return;
+    }
+    syncUserRulesVisibility(userId, checkbox.checked);
+    checkbox.addEventListener("change", () => {
+      syncUserRulesVisibility(userId, checkbox.checked);
+    });
+  });
 })();

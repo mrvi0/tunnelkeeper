@@ -4,7 +4,8 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from generators.authorized_keys_generator import render_authorized_keys
+from generators.authorized_keys_generator import render_authorized_keys_for_user
+from repositories.key_permit_repository import KeyPermitRepository
 from repositories.ssh_key_repository import SSHKeyRepository
 from repositories.tunnel_user_repository import TunnelUserRepository
 from services.exceptions import NotFoundError
@@ -18,6 +19,7 @@ class AuthorizedKeysService:
         self.db = db
         self.user_repo = TunnelUserRepository(db)
         self.key_repo = SSHKeyRepository(db)
+        self.key_permit_repo = KeyPermitRepository(db)
         self.linux_service = linux_service or LinuxService()
 
     def regenerate(self, tunnel_user_id: int) -> None:
@@ -27,7 +29,11 @@ class AuthorizedKeysService:
 
         _, auth_keys_path = self.linux_service.ensure_ssh_directory(user)
         keys = self.key_repo.list_by_user(user.id)
-        output = render_authorized_keys(keys)
+        rules_by_key = {
+            key.id: self.key_permit_repo.list_rules_for_key_user(key.id, tunnel_user_id)
+            for key in keys
+        }
+        output = render_authorized_keys_for_user(keys, tunnel_user_id, rules_by_key)
 
         backup_path = self.linux_service.backup_file(auth_keys_path)
         self.linux_service.atomic_write(auth_keys_path, output)

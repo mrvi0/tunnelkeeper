@@ -13,7 +13,14 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.config import get_settings
 from models.base import Base
-from models import audit_log, permit_open_rule, ssh_key, ssh_key_permit_rule, tunnel_user  # noqa: F401
+from models import (  # noqa: F401
+    audit_log,
+    permit_open_rule,
+    ssh_key,
+    ssh_key_permit_rule,
+    ssh_key_user_assignment,
+    tunnel_user,
+)
 
 config = context.config
 settings = get_settings()
