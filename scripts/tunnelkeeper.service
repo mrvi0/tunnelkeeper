@@ -1,8 +1,7 @@
-# Example systemd unit for API-only TunnelKeeper on a bastion.
-# Install:
-#   sudo cp scripts/tunnelkeeper.service /etc/systemd/system/tunnelkeeper.service
-#   sudo systemctl edit tunnelkeeper   # set WorkingDirectory, User, EnvironmentFile
-#   sudo systemctl enable --now tunnelkeeper
+# Example/reference unit (paths are placeholders).
+# Auto-install from project directory:
+#   sudo ./scripts/install-systemd-service.sh
+#   make install-service
 #
 # Suggested .env on the server:
 #   ENABLE_WEB_UI=false

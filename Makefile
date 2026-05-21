@@ -16,7 +16,7 @@ UVICORN := $(VENV)/bin/uvicorn
 ALEMBIC := $(VENV)/bin/alembic
 RUFF := $(VENV)/bin/ruff
 
-.PHONY: install run dev migrate lint format venv setup-sshd run-api
+.PHONY: install run dev migrate lint format venv setup-sshd run-api install-service
 
 venv:
 	@test -d $(VENV) || python3 -m venv $(VENV)
@@ -43,6 +43,9 @@ format: venv
 
 setup-sshd:
 	sudo bash scripts/setup-sshd.sh
+
+install-service:
+	sudo bash scripts/install-systemd-service.sh
 
 run-api: venv
 	@test -n "$(API_TOKEN)" || (echo "Set API_TOKEN in .env (min 16 chars) or: make run-api API_TOKEN=..." && exit 1)

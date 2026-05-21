@@ -41,13 +41,23 @@ API auth: `Authorization: Bearer <API_TOKEN>` or header `X-API-Key`.
 
 OpenAPI docs: `/docs` when API is enabled.
 
+**Полная документация с примерами `curl`:** [docs/API.md](docs/API.md)
+
 Example:
 
 ```bash
 curl -s -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8090/api/v1/health
 ```
 
-Background service: see `scripts/tunnelkeeper.service`.
+Background service:
+
+```bash
+make install          # once, creates .venv
+cp .env.example .env  # configure API_TOKEN, APP_HOST, APP_PORT
+sudo make install-service
+```
+
+See also `scripts/tunnelkeeper.service` (reference unit).
 
 ## Features
 
@@ -94,6 +104,7 @@ Open the firewall if needed. Do not leave the panel exposed without TLS and netw
 - `make dev` — reload
 - `make migrate` — Alembic
 - `make setup-sshd` — one-time sshd Include + generated dir
+- `make install-service` — install, enable and start systemd unit
 - `make lint` / `make format` — ruff
 
 ### API-only example
