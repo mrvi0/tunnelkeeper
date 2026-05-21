@@ -6,20 +6,21 @@
     <a href="/" class="text-sm text-slate-400 hover:text-slate-200">← Dashboard</a>
     <h1 class="text-xl font-semibold mt-2">{{ user.username }}</h1>
     <p class="text-sm text-slate-400">{{ user.comment or "No comment" }}</p>
-    <p class="font-mono text-xs text-slate-500 mt-1">{{ user.linux_home }}</p>
+    <p class="font-mono text-xs text-slate-500 mt-1">{{ user.linux_home }} · {{ user.linux_shell }}</p>
+    <p class="font-mono text-xs text-slate-600 mt-1">sshd: {{ sshd_path }}</p>
+    {% if user.allows_interactive_login %}
+    <span class="inline-block mt-2 rounded bg-emerald-900/40 text-emerald-300 px-2 py-1 text-xs">Interactive login allowed</span>
+    {% else %}
+    <span class="inline-block mt-2 rounded bg-slate-800 text-slate-300 px-2 py-1 text-xs">Tunnel only</span>
+    {% endif %}
   </div>
   {% if not readonly_mode %}
   <div class="flex gap-2 flex-wrap">
-    <form method="post" action="/users/{{ user.id }}/comment" class="flex gap-2">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      <input type="text" name="comment" value="{{ user.comment }}" class="rounded bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="Comment" />
-      <button class="rounded bg-slate-700 hover:bg-slate-600 px-3 py-2 text-sm">Save</button>
-    </form>
     <form method="post" action="/users/{{ user.id }}/regenerate">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      <button class="rounded bg-emerald-700 hover:bg-emerald-600 px-3 py-2 text-sm">Regenerate</button>
+      <button class="rounded bg-emerald-700 hover:bg-emerald-600 px-3 py-2 text-sm">Regenerate files</button>
     </form>
-    <form method="post" action="/users/{{ user.id }}/delete" onsubmit="return confirm('Delete user?')">
+    <form method="post" action="/users/{{ user.id }}/delete" onsubmit="return confirm('Delete user and Linux account?')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       <button class="rounded bg-rose-700 hover:bg-rose-600 px-3 py-2 text-sm">Delete</button>
     </form>
@@ -27,93 +28,103 @@
   {% endif %}
 </section>
 
-<section class="grid lg:grid-cols-2 gap-6">
+{% if not readonly_mode %}
+<section class="rounded-lg border border-slate-800 bg-slate-900 p-4 mb-6">
+  <h2 class="text-lg font-semibold mb-3">User settings</h2>
+  <form method="post" action="/users/{{ user.id }}/update" class="space-y-4 max-w-2xl">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label class="block">
+      <span class="text-sm text-slate-300">Comment</span>
+      <input name="comment" value="{{ user.comment }}" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
+    </label>
+    <label class="flex items-center gap-2">
+      <input type="checkbox" name="tunnel_only" value="true" {% if not user.allows_interactive_login %}checked{% endif %} class="rounded" />
+      <span class="text-sm text-slate-300">Tunnel only (nologin + ForceCommand)</span>
+    </label>
+    <label class="block">
+      <span class="text-sm text-slate-300">Shell</span>
+      <select name="linux_shell" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2">
+        {% for key, path in shell_choices.items() %}
+        <option value="{{ key }}" {% if user.linux_shell == path %}selected{% endif %}>{{ key }} — {{ path }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="block">
+      <span class="text-sm text-slate-300">Supplementary groups</span>
+      <input name="supplementary_groups" value="{{ user.supplementary_groups }}" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" placeholder="docker" />
+    </label>
+    <fieldset class="space-y-2 border border-slate-800 rounded p-3">
+      <legend class="text-sm text-slate-400 px-1">SSH Match User options</legend>
+      <label class="flex items-center gap-2"><input type="checkbox" name="allow_tcp_forwarding" value="true" {% if user.allow_tcp_forwarding %}checked{% endif %} /> AllowTcpForwarding</label>
+      <label class="flex items-center gap-2"><input type="checkbox" name="permit_tty" value="true" {% if user.permit_tty %}checked{% endif %} /> PermitTTY</label>
+      <label class="flex items-center gap-2"><input type="checkbox" name="x11_forwarding" value="true" {% if user.x11_forwarding %}checked{% endif %} /> X11Forwarding</label>
+      <label class="flex items-center gap-2"><input type="checkbox" name="allow_agent_forwarding" value="true" {% if user.allow_agent_forwarding %}checked{% endif %} /> AllowAgentForwarding</label>
+      <label class="block">
+        <span class="text-sm text-slate-300">ForceCommand</span>
+        <input name="force_command" value="{{ user.force_command }}" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2 font-mono text-xs" />
+      </label>
+    </fieldset>
+    <fieldset class="space-y-2 border border-slate-800 rounded p-3">
+      <legend class="text-sm text-slate-400 px-1">PermitOpen destinations</legend>
+      {% for dest in all_destinations %}
+      {% if dest.enabled %}
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="destination_ids" value="{{ dest.id }}" {% if dest.id in assigned_dest_ids %}checked{% endif %} />
+        <span>{{ dest.alias }} — <span class="font-mono text-xs">{{ dest.host }}:{{ dest.port }}</span></span>
+      </label>
+      {% endif %}
+      {% endfor %}
+    </fieldset>
+    <button type="submit" class="rounded bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium">Save settings</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="grid lg:grid-cols-1 gap-6">
   <div class="rounded-lg border border-slate-800 bg-slate-900 p-4">
     <div class="flex items-center justify-between mb-3">
-      <h2 class="text-lg font-semibold">PermitOpen Rules</h2>
+      <h2 class="text-lg font-semibold">SSH Keys</h2>
+      <p class="text-sm text-slate-400">Plain keys in <code class="text-xs">~/.ssh/authorized_keys</code> — no permitopen options.</p>
       {% if not readonly_mode %}
-      <button data-open-modal="add-rule-modal" class="rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 text-sm">Add Rule</button>
+      <button data-open-modal="add-key-modal" class="rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 text-sm">Add Key</button>
       {% endif %}
     </div>
-    <p class="text-sm text-slate-400 mb-3">Catalog of allowed tunnel targets for this user. Keys pick from these rules.</p>
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="text-slate-400">
           <tr class="border-b border-slate-800">
-            <th class="text-left py-2">Alias</th>
-            <th class="text-left py-2">Host:Port</th>
+            <th class="text-left py-2">Name</th>
+            <th class="text-left py-2">Fingerprint</th>
             <th class="text-left py-2">Status</th>
             {% if not readonly_mode %}<th class="text-left py-2">Actions</th>{% endif %}
           </tr>
         </thead>
         <tbody>
-          {% for rule in rules %}
+          {% for key in keys %}
           <tr class="border-b border-slate-800/60">
-            <td class="py-2">{{ rule.alias }}</td>
-            <td class="py-2 font-mono text-xs">{{ rule.host }}:{{ rule.port }}</td>
+            <td class="py-2">{{ key.name }}</td>
+            <td class="py-2 font-mono text-xs text-slate-400">{{ key.fingerprint }}</td>
             <td class="py-2">
-              {% if rule.enabled %}
-              <span class="rounded bg-emerald-900/40 text-emerald-300 px-2 py-1 text-xs">Enabled</span>
-              {% else %}
-              <span class="rounded bg-slate-800 text-slate-300 px-2 py-1 text-xs">Disabled</span>
-              {% endif %}
+              {% if key.enabled %}<span class="text-emerald-400 text-xs">on</span>{% else %}<span class="text-slate-500 text-xs">off</span>{% endif %}
             </td>
             {% if not readonly_mode %}
             <td class="py-2">
               <div class="flex gap-2">
-                <form method="post" action="/rules/{{ rule.id }}/toggle">
+                <form method="post" action="/keys/{{ key.id }}/toggle">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-                  <input type="hidden" name="enabled" value="{{ 'false' if rule.enabled else 'true' }}" />
-                  <button class="text-amber-400 hover:text-amber-300 text-xs">{{ 'Disable' if rule.enabled else 'Enable' }}</button>
+                  <input type="hidden" name="enabled" value="{{ 'false' if key.enabled else 'true' }}" />
+                  <button class="text-amber-400 text-xs">{{ 'Disable' if key.enabled else 'Enable' }}</button>
                 </form>
-                <form method="post" action="/rules/{{ rule.id }}/delete" onsubmit="return confirm('Delete rule?')">
+                <form method="post" action="/keys/{{ key.id }}/delete" onsubmit="return confirm('Delete key?')">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-                  <button class="text-rose-400 hover:text-rose-300 text-xs">Delete</button>
+                  <button class="text-rose-400 text-xs">Delete</button>
                 </form>
               </div>
             </td>
             {% endif %}
           </tr>
           {% else %}
-          <tr><td colspan="4" class="py-4 text-slate-500">No PermitOpen rules yet.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="rounded-lg border border-slate-800 bg-slate-900 p-4">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-lg font-semibold">SSH Keys</h2>
-      <a href="/keys" class="rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 text-sm">Add key (global)</a>
-    </div>
-    <p class="text-sm text-slate-400 mb-3">Keys are added on the <a href="/keys" class="text-sky-400 hover:text-sky-300">SSH Keys</a> page and can be linked to multiple users.</p>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead class="text-slate-400">
-          <tr class="border-b border-slate-800">
-            <th class="text-left py-2">Name</th>
-            <th class="text-left py-2">PermitOpen (this user)</th>
-            <th class="text-left py-2">Status</th>
-            <th class="text-left py-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in key_rows %}
-          <tr class="border-b border-slate-800/60">
-            <td class="py-2">{{ row.key.name }}</td>
-            <td class="py-2 text-slate-300 text-xs">
-              {% if row.rules %}{{ row.rules | map(attribute='alias') | join(', ') }}{% else %}<span class="text-amber-400">none</span>{% endif %}
-            </td>
-            <td class="py-2">
-              {% if row.key.enabled %}<span class="text-emerald-400 text-xs">on</span>{% else %}<span class="text-slate-500 text-xs">off</span>{% endif %}
-            </td>
-            <td class="py-2">
-              <a href="/keys/{{ row.key.id }}" class="text-sky-400 hover:text-sky-300">Settings</a>
-            </td>
-          </tr>
-          {% else %}
-          <tr><td colspan="4" class="py-4 text-slate-500">No keys linked to this user.</td></tr>
+          <tr><td colspan="4" class="py-4 text-slate-500">No SSH keys yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -122,33 +133,23 @@
 </section>
 
 {% if not readonly_mode %}
-<dialog id="add-rule-modal" data-modal>
+<dialog id="add-key-modal" data-modal>
   <div data-modal-panel class="rounded-xl border border-slate-700 bg-slate-900 text-slate-100 shadow-xl">
     <div class="p-4 border-b border-slate-800 flex items-center justify-between">
-      <h3 class="font-semibold">Add PermitOpen Rule</h3>
+      <h3 class="font-semibold">Add SSH Key</h3>
       <button type="button" data-close-modal class="text-slate-400 hover:text-slate-200" aria-label="Close">×</button>
     </div>
-    <form method="post" action="/users/{{ user.id }}/rules" class="p-4 space-y-3">
+    <form method="post" action="/users/{{ user.id }}/keys" class="p-4 space-y-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       <label class="block">
-        <span class="text-sm text-slate-300">Alias</span>
-        <input name="alias" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
+        <span class="text-sm text-slate-300">Name</span>
+        <input name="name" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
       </label>
-      <div class="grid grid-cols-3 gap-2">
-        <label class="block col-span-2">
-          <span class="text-sm text-slate-300">Host</span>
-          <input name="host" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
-        </label>
-        <label class="block">
-          <span class="text-sm text-slate-300">Port</span>
-          <input name="port" type="number" min="1" max="65535" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
-        </label>
-      </div>
       <label class="block">
-        <span class="text-sm text-slate-300">Comment</span>
-        <input name="comment" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
+        <span class="text-sm text-slate-300">Public key</span>
+        <textarea name="public_key" required rows="4" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2 font-mono text-xs"></textarea>
       </label>
-      <button type="submit" class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Add Rule</button>
+      <button type="submit" class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Add</button>
     </form>
   </div>
 </dialog>

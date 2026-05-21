@@ -20,6 +20,17 @@ class Settings(BaseSettings):
     secure_cookies: bool = Field(default=False, alias="SECURE_COOKIES")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
+    sshd_generated_dir: str = Field(
+        default="/etc/ssh/sshd_config.d/generated",
+        alias="SSHD_GENERATED_DIR",
+    )
+    sshd_main_config: str = Field(default="/etc/ssh/sshd_config", alias="SSHD_MAIN_CONFIG")
+    sshd_include_snippet: str = Field(
+        default="Include /etc/ssh/sshd_config.d/*.conf",
+        alias="SSHD_INCLUDE_SNIPPET",
+    )
+    sshd_reload_on_change: bool = Field(default=True, alias="SSHD_RELOAD_ON_CHANGE")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

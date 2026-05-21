@@ -12,12 +12,13 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.dependencies import db_session, require_admin, with_session_guard
-from app.schemas import PermitOpenCreate, SSHKeyCreate, TunnelUserCreate
+from app.schemas import SHELL_CHOICES, DestinationCreate, SSHKeyCreate, TunnelUserCreate, TunnelUserUpdate
 from app.security import ensure_csrf, validate_csrf
-from models.permit_open_rule import PermitOpenRule
-from models.ssh_key import SSHKey
+from models.tunnel_destination import TunnelDestination
 from models.tunnel_user import TunnelUser
 from repositories.audit_repository import AuditRepository
+from repositories.destination_repository import DestinationRepository
+from repositories.ssh_key_repository import SSHKeyRepository
 from services.exceptions import AppError
 from services.tunnel_access_service import TunnelAccessService
 
@@ -25,6 +26,12 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 router = APIRouter()
+
+
+def _form_bool(value: str | None, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return str(value).lower() in ("true", "1", "on", "yes")
 templates = Jinja2Templates(directory="templates")
 
 
@@ -52,17 +59,17 @@ def _perform_mutation(
         return False, f"Unexpected error: {exc}"
 
 
-def _dashboard_context(db: Session) -> dict[str, Any]:
+def _dashboard_context(db: Session, service: TunnelAccessService) -> dict[str, Any]:
     users = list(db.scalars(select(TunnelUser).order_by(TunnelUser.created_at.desc())).all())
-    keys_count = len(db.scalars(select(SSHKey.id)).all())
-    rules_count = len(db.scalars(select(PermitOpenRule.id)).all())
-    latest_audit = AuditRepository(db).latest(limit=15)
+    keys_count = SSHKeyRepository(db).count()
+    destinations_count = DestinationRepository(db).count()
     return {
         "users": users,
         "users_count": len(users),
         "keys_count": keys_count,
-        "rules_count": rules_count,
-        "latest_audit": latest_audit,
+        "destinations_count": destinations_count,
+        "latest_audit": AuditRepository(db).latest(limit=15),
+        "sshd_warning": service.sshd_include_warning(),
     }
 
 
@@ -73,7 +80,8 @@ def dashboard(
     admin: dict = Depends(require_admin),
     _: None = Depends(with_session_guard),
 ):
-    context = _dashboard_context(db)
+    service = TunnelAccessService(db)
+    context = _dashboard_context(db, service)
     context.update(
         {
             "admin": admin,
@@ -81,34 +89,27 @@ def dashboard(
             "message": request.query_params.get("message"),
             "error": request.query_params.get("error"),
             "readonly_mode": settings.readonly_mode,
+            "destinations": DestinationRepository(db).list_all(),
+            "shell_choices": SHELL_CHOICES,
         }
     )
     return templates.TemplateResponse(request=request, name="dashboard.html", context=context)
 
 
-@router.get("/keys")
-def keys_page(
+@router.get("/destinations")
+def destinations_page(
     request: Request,
     db: Session = Depends(db_session),
     admin: dict = Depends(require_admin),
     _: None = Depends(with_session_guard),
 ):
-    from repositories.permit_open_repository import PermitOpenRepository
-    from repositories.ssh_key_repository import SSHKeyRepository
-
-    keys = SSHKeyRepository(db).list_all()
-    users = list(db.scalars(select(TunnelUser).order_by(TunnelUser.username)).all())
-    users_with_rules = [
-        {"user": user, "rules": PermitOpenRepository(db).list_by_user(user.id)}
-        for user in users
-    ]
+    rules = DestinationRepository(db).list_all()
     return templates.TemplateResponse(
         request=request,
-        name="keys.html",
+        name="destinations.html",
         context={
             "admin": admin,
-            "keys": keys,
-            "users_with_rules": users_with_rules,
+            "destinations": rules,
             "csrf_token": ensure_csrf(request),
             "message": request.query_params.get("message"),
             "error": request.query_params.get("error"),
@@ -117,199 +118,8 @@ def keys_page(
     )
 
 
-@router.post("/keys")
-def create_key(
-    request: Request,
-    name: str = Form(...),
-    public_key: str = Form(...),
-    enabled: bool = Form(True),
-    tunnel_user_ids: Annotated[list[int], Form()] = [],
-    permit_rule_ids: Annotated[list[int], Form()] = [],
-    csrf_token: str = Form(...),
-    db: Session = Depends(db_session),
-    admin: dict = Depends(require_admin),
-    _: None = Depends(with_session_guard),
-):
-    validate_csrf(request, csrf_token)
-    service = TunnelAccessService(db)
-    payload = SSHKeyCreate(name=name, public_key=public_key, enabled=enabled)
-    ok, result = _perform_mutation(
-        db=db,
-        actor=admin["username"],
-        action="add_ssh_key",
-        target=f"key:{name}",
-        details=f"users={tunnel_user_ids} rules={permit_rule_ids}",
-        execute=lambda: service.add_ssh_key(payload, tunnel_user_ids, permit_rule_ids),
-    )
-    if ok:
-        return RedirectResponse(url="/keys?message=Key%20added", status_code=303)
-    return RedirectResponse(url=f"/keys?error={quote_plus(result)}", status_code=303)
-
-
-@router.get("/keys/{key_id}")
-def key_detail(
-    key_id: int,
-    request: Request,
-    db: Session = Depends(db_session),
-    admin: dict = Depends(require_admin),
-    _: None = Depends(with_session_guard),
-):
-    from repositories.key_assignment_repository import KeyAssignmentRepository
-    from repositories.key_permit_repository import KeyPermitRepository
-    from repositories.permit_open_repository import PermitOpenRepository
-    from repositories.ssh_key_repository import SSHKeyRepository
-
-    key = SSHKeyRepository(db).get(key_id)
-    if not key:
-        raise HTTPException(status_code=404, detail="Key not found")
-
-    key_permit_repo = KeyPermitRepository(db)
-    user_sections = []
-    for user in KeyAssignmentRepository(db).list_users_for_key(key_id):
-        user_sections.append(
-            {
-                "user": user,
-                "all_rules": PermitOpenRepository(db).list_by_user(user.id),
-                "assigned_ids": set(key_permit_repo.list_rule_ids_for_key_user(key_id, user.id)),
-            }
-        )
-    return templates.TemplateResponse(
-        request=request,
-        name="key_detail.html",
-        context={
-            "admin": admin,
-            "key": key,
-            "user_sections": user_sections,
-            "csrf_token": ensure_csrf(request),
-            "message": request.query_params.get("message"),
-            "error": request.query_params.get("error"),
-            "readonly_mode": settings.readonly_mode,
-        },
-    )
-
-
-@router.post("/keys/{key_id}/users/{user_id}/access")
-def update_key_access_for_user(
-    key_id: int,
-    user_id: int,
-    request: Request,
-    permit_rule_ids: Annotated[list[int], Form()] = [],
-    csrf_token: str = Form(...),
-    db: Session = Depends(db_session),
-    admin: dict = Depends(require_admin),
-    _: None = Depends(with_session_guard),
-):
-    validate_csrf(request, csrf_token)
-    service = TunnelAccessService(db)
-    ok, result = _perform_mutation(
-        db=db,
-        actor=admin["username"],
-        action="update_key_access",
-        target=f"key_id:{key_id}:user_id:{user_id}",
-        details=f"rules={permit_rule_ids}",
-        execute=lambda: service.set_key_access_for_user(key_id, user_id, permit_rule_ids),
-    )
-    if ok:
-        return RedirectResponse(url=f"/keys/{key_id}?message=Access%20updated", status_code=303)
-    return RedirectResponse(url=f"/keys/{key_id}?error={quote_plus(result)}", status_code=303)
-
-
-@router.post("/keys/{key_id}/toggle")
-def toggle_key(
-    key_id: int,
-    request: Request,
-    enabled: bool = Form(...),
-    csrf_token: str = Form(...),
-    db: Session = Depends(db_session),
-    admin: dict = Depends(require_admin),
-    _: None = Depends(with_session_guard),
-):
-    validate_csrf(request, csrf_token)
-    key = db.get(SSHKey, key_id)
-    if not key:
-        return RedirectResponse(url="/keys?error=Key%20not%20found", status_code=303)
-    service = TunnelAccessService(db)
-    ok, result = _perform_mutation(
-        db=db,
-        actor=admin["username"],
-        action="toggle_ssh_key",
-        target=f"key_id:{key_id}",
-        details=f"enabled={enabled}",
-        execute=lambda: service.toggle_key(key_id, enabled),
-    )
-    if ok:
-        return RedirectResponse(url=f"/keys/{key_id}?message=Key%20updated", status_code=303)
-    return RedirectResponse(url=f"/keys/{key_id}?error={quote_plus(result)}", status_code=303)
-
-
-@router.post("/keys/{key_id}/delete")
-def delete_key(
-    key_id: int,
-    request: Request,
-    csrf_token: str = Form(...),
-    db: Session = Depends(db_session),
-    admin: dict = Depends(require_admin),
-    _: None = Depends(with_session_guard),
-):
-    validate_csrf(request, csrf_token)
-    service = TunnelAccessService(db)
-    ok, result = _perform_mutation(
-        db=db,
-        actor=admin["username"],
-        action="delete_ssh_key",
-        target=f"key_id:{key_id}",
-        details="deleted",
-        execute=lambda: service.delete_key(key_id),
-    )
-    if ok:
-        return RedirectResponse(url="/keys?message=Key%20deleted", status_code=303)
-    return RedirectResponse(url=f"/keys?error={quote_plus(result)}", status_code=303)
-
-
-@router.get("/users/{user_id}")
-def user_details(
-    user_id: int,
-    request: Request,
-    db: Session = Depends(db_session),
-    admin: dict = Depends(require_admin),
-    _: None = Depends(with_session_guard),
-):
-    from repositories.key_permit_repository import KeyPermitRepository
-    from repositories.permit_open_repository import PermitOpenRepository
-    from repositories.ssh_key_repository import SSHKeyRepository
-
-    user = db.get(TunnelUser, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    key_permit_repo = KeyPermitRepository(db)
-    key_rows = []
-    for key in SSHKeyRepository(db).list_by_user(user_id):
-        key_rows.append(
-            {
-                "key": key,
-                "rules": key_permit_repo.list_rules_for_key_user(key.id, user_id),
-            }
-        )
-    rules = PermitOpenRepository(db).list_by_user(user_id)
-    return templates.TemplateResponse(
-        request=request,
-        name="user_detail.html",
-        context={
-            "admin": admin,
-            "user": user,
-            "key_rows": key_rows,
-            "rules": rules,
-            "csrf_token": ensure_csrf(request),
-            "message": request.query_params.get("message"),
-            "error": request.query_params.get("error"),
-            "readonly_mode": settings.readonly_mode,
-        },
-    )
-
-
-@router.post("/users/{user_id}/rules")
-def add_user_rule(
-    user_id: int,
+@router.post("/destinations")
+def create_destination(
     request: Request,
     alias: str = Form(...),
     host: str = Form(...),
@@ -323,23 +133,23 @@ def add_user_rule(
 ):
     validate_csrf(request, csrf_token)
     service = TunnelAccessService(db)
-    payload = PermitOpenCreate(alias=alias, host=host, port=port, comment=comment, enabled=enabled)
+    payload = DestinationCreate(alias=alias, host=host, port=port, comment=comment, enabled=enabled)
     ok, result = _perform_mutation(
         db=db,
         actor=admin["username"],
-        action="add_permit_rule",
-        target=f"user_id:{user_id}",
-        details=f"{host}:{port}",
-        execute=lambda: service.add_permit_rule(user_id, payload),
+        action="add_destination",
+        target=f"{host}:{port}",
+        details=f"alias={alias}",
+        execute=lambda: service.add_destination(payload),
     )
     if ok:
-        return RedirectResponse(url=f"/users/{user_id}?message=PermitOpen%20rule%20added", status_code=303)
-    return RedirectResponse(url=f"/users/{user_id}?error={quote_plus(result)}", status_code=303)
+        return RedirectResponse(url="/destinations?message=Destination%20added", status_code=303)
+    return RedirectResponse(url=f"/destinations?error={quote_plus(result)}", status_code=303)
 
 
-@router.post("/rules/{rule_id}/toggle")
-def toggle_rule(
-    rule_id: int,
+@router.post("/destinations/{dest_id}/toggle")
+def toggle_destination(
+    dest_id: int,
     request: Request,
     enabled: bool = Form(...),
     csrf_token: str = Form(...),
@@ -348,27 +158,23 @@ def toggle_rule(
     _: None = Depends(with_session_guard),
 ):
     validate_csrf(request, csrf_token)
-    rule = db.get(PermitOpenRule, rule_id)
-    if not rule:
-        return RedirectResponse(url="/?error=Rule%20not%20found", status_code=303)
-    user_id = rule.tunnel_user_id
     service = TunnelAccessService(db)
     ok, result = _perform_mutation(
         db=db,
         actor=admin["username"],
-        action="toggle_permit_rule",
-        target=f"rule_id:{rule_id}",
+        action="toggle_destination",
+        target=f"dest_id:{dest_id}",
         details=f"enabled={enabled}",
-        execute=lambda: service.toggle_rule(rule_id, enabled),
+        execute=lambda: service.toggle_destination(dest_id, enabled),
     )
     if ok:
-        return RedirectResponse(url=f"/users/{user_id}?message=Rule%20updated", status_code=303)
-    return RedirectResponse(url=f"/users/{user_id}?error={quote_plus(result)}", status_code=303)
+        return RedirectResponse(url="/destinations?message=Destination%20updated", status_code=303)
+    return RedirectResponse(url=f"/destinations?error={quote_plus(result)}", status_code=303)
 
 
-@router.post("/rules/{rule_id}/delete")
-def delete_rule(
-    rule_id: int,
+@router.post("/destinations/{dest_id}/delete")
+def delete_destination(
+    dest_id: int,
     request: Request,
     csrf_token: str = Form(...),
     db: Session = Depends(db_session),
@@ -376,22 +182,54 @@ def delete_rule(
     _: None = Depends(with_session_guard),
 ):
     validate_csrf(request, csrf_token)
-    rule = db.get(PermitOpenRule, rule_id)
-    if not rule:
-        return RedirectResponse(url="/?error=Rule%20not%20found", status_code=303)
-    user_id = rule.tunnel_user_id
     service = TunnelAccessService(db)
     ok, result = _perform_mutation(
         db=db,
         actor=admin["username"],
-        action="delete_permit_rule",
-        target=f"rule_id:{rule_id}",
+        action="delete_destination",
+        target=f"dest_id:{dest_id}",
         details="deleted",
-        execute=lambda: service.delete_rule(rule_id),
+        execute=lambda: service.delete_destination(dest_id),
     )
     if ok:
-        return RedirectResponse(url=f"/users/{user_id}?message=Rule%20deleted", status_code=303)
-    return RedirectResponse(url=f"/users/{user_id}?error={quote_plus(result)}", status_code=303)
+        return RedirectResponse(url="/destinations?message=Destination%20deleted", status_code=303)
+    return RedirectResponse(url=f"/destinations?error={quote_plus(result)}", status_code=303)
+
+
+@router.get("/users/{user_id}")
+def user_details(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(db_session),
+    admin: dict = Depends(require_admin),
+    _: None = Depends(with_session_guard),
+):
+    from repositories.tunnel_user_repository import TunnelUserRepository
+    from repositories.user_destination_repository import UserDestinationRepository
+
+    user = TunnelUserRepository(db).get(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    keys = SSHKeyRepository(db).list_by_user(user_id)
+    assigned_dest_ids = set(UserDestinationRepository(db).list_destination_ids(user_id))
+    all_destinations = DestinationRepository(db).list_all()
+    return templates.TemplateResponse(
+        request=request,
+        name="user_detail.html",
+        context={
+            "admin": admin,
+            "user": user,
+            "keys": keys,
+            "all_destinations": all_destinations,
+            "assigned_dest_ids": assigned_dest_ids,
+            "csrf_token": ensure_csrf(request),
+            "message": request.query_params.get("message"),
+            "error": request.query_params.get("error"),
+            "readonly_mode": settings.readonly_mode,
+            "shell_choices": SHELL_CHOICES,
+            "sshd_path": f"{settings.sshd_generated_dir}/{user.sshd_config_filename}",
+        },
+    )
 
 
 @router.post("/users")
@@ -400,6 +238,15 @@ def create_user(
     username: str = Form(...),
     comment: str = Form(""),
     linux_home: str = Form(""),
+    linux_shell: str = Form("nologin"),
+    supplementary_groups: str = Form(""),
+    allow_tcp_forwarding: str | None = Form(None),
+    permit_tty: str | None = Form(None),
+    x11_forwarding: str | None = Form(None),
+    allow_agent_forwarding: str | None = Form(None),
+    force_command: str = Form(""),
+    tunnel_only: str | None = Form(None),
+    destination_ids: Annotated[list[int], Form()] = [],
     csrf_token: str = Form(...),
     db: Session = Depends(db_session),
     admin: dict = Depends(require_admin),
@@ -407,18 +254,77 @@ def create_user(
 ):
     validate_csrf(request, csrf_token)
     service = TunnelAccessService(db)
-    payload = TunnelUserCreate(username=username, comment=comment, linux_home=linux_home)
+    payload = TunnelUserCreate(
+        username=username,
+        comment=comment,
+        linux_home=linux_home,
+        linux_shell=linux_shell,
+        supplementary_groups=supplementary_groups,
+        allow_tcp_forwarding=_form_bool(allow_tcp_forwarding, default=True),
+        permit_tty=_form_bool(permit_tty),
+        x11_forwarding=_form_bool(x11_forwarding),
+        allow_agent_forwarding=_form_bool(allow_agent_forwarding),
+        force_command=force_command,
+        tunnel_only=_form_bool(tunnel_only, default=True),
+        destination_ids=destination_ids,
+    )
     ok, result = _perform_mutation(
         db=db,
         actor=admin["username"],
         action="create_tunnel_user",
         target=f"user:{username}",
-        details=f"home={payload.linux_home}",
+        details=f"destinations={destination_ids}",
         execute=lambda: service.create_tunnel_user(payload),
     )
     if ok:
         return RedirectResponse(url="/?message=User%20created", status_code=303)
     return RedirectResponse(url=f"/?error={quote_plus(result)}", status_code=303)
+
+
+@router.post("/users/{user_id}/update")
+def update_user(
+    user_id: int,
+    request: Request,
+    comment: str = Form(""),
+    linux_shell: str = Form("nologin"),
+    supplementary_groups: str = Form(""),
+    allow_tcp_forwarding: str | None = Form(None),
+    permit_tty: str | None = Form(None),
+    x11_forwarding: str | None = Form(None),
+    allow_agent_forwarding: str | None = Form(None),
+    force_command: str = Form(""),
+    tunnel_only: str | None = Form(None),
+    destination_ids: Annotated[list[int], Form()] = [],
+    csrf_token: str = Form(...),
+    db: Session = Depends(db_session),
+    admin: dict = Depends(require_admin),
+    _: None = Depends(with_session_guard),
+):
+    validate_csrf(request, csrf_token)
+    service = TunnelAccessService(db)
+    payload = TunnelUserUpdate(
+        comment=comment,
+        linux_shell=linux_shell,
+        supplementary_groups=supplementary_groups,
+        allow_tcp_forwarding=_form_bool(allow_tcp_forwarding, default=True),
+        permit_tty=_form_bool(permit_tty),
+        x11_forwarding=_form_bool(x11_forwarding),
+        allow_agent_forwarding=_form_bool(allow_agent_forwarding),
+        force_command=force_command,
+        tunnel_only=_form_bool(tunnel_only),
+        destination_ids=destination_ids,
+    )
+    ok, result = _perform_mutation(
+        db=db,
+        actor=admin["username"],
+        action="update_tunnel_user",
+        target=f"user_id:{user_id}",
+        details=f"destinations={destination_ids}",
+        execute=lambda: service.update_tunnel_user(user_id, payload),
+    )
+    if ok:
+        return RedirectResponse(url=f"/users/{user_id}?message=User%20updated", status_code=303)
+    return RedirectResponse(url=f"/users/{user_id}?error={quote_plus(result)}", status_code=303)
 
 
 @router.post("/users/{user_id}/delete")
@@ -437,7 +343,7 @@ def delete_user(
         actor=admin["username"],
         action="delete_tunnel_user",
         target=f"user_id:{user_id}",
-        details="deleted user and related keys",
+        details="deleted",
         execute=lambda: service.delete_tunnel_user(user_id),
     )
     if ok:
@@ -445,34 +351,96 @@ def delete_user(
     return RedirectResponse(url=f"/?error={quote_plus(result)}", status_code=303)
 
 
-@router.post("/users/{user_id}/comment")
-def update_user_comment(
+@router.post("/users/{user_id}/keys")
+def add_key(
     user_id: int,
     request: Request,
-    comment: str = Form(""),
+    name: str = Form(...),
+    public_key: str = Form(...),
+    enabled: bool = Form(True),
     csrf_token: str = Form(...),
     db: Session = Depends(db_session),
     admin: dict = Depends(require_admin),
     _: None = Depends(with_session_guard),
 ):
     validate_csrf(request, csrf_token)
-    user = db.get(TunnelUser, user_id)
-    if not user:
-        return RedirectResponse(url="/?error=User%20not%20found", status_code=303)
-    user.comment = comment
-    db.add(user)
-    AuditRepository(db).create(
+    service = TunnelAccessService(db)
+    payload = SSHKeyCreate(tunnel_user_id=user_id, name=name, public_key=public_key, enabled=enabled)
+    ok, result = _perform_mutation(
+        db=db,
         actor=admin["username"],
-        action="update_tunnel_user_comment",
+        action="add_ssh_key",
         target=f"user_id:{user_id}",
-        details=f"comment={comment}",
+        details=f"key_name={name}",
+        execute=lambda: service.add_ssh_key(payload),
     )
-    db.commit()
-    return RedirectResponse(url=f"/users/{user_id}?message=Comment%20updated", status_code=303)
+    if ok:
+        return RedirectResponse(url=f"/users/{user_id}?message=Key%20added", status_code=303)
+    return RedirectResponse(url=f"/users/{user_id}?error={quote_plus(result)}", status_code=303)
+
+
+@router.post("/keys/{key_id}/toggle")
+def toggle_key(
+    key_id: int,
+    request: Request,
+    enabled: bool = Form(...),
+    csrf_token: str = Form(...),
+    db: Session = Depends(db_session),
+    admin: dict = Depends(require_admin),
+    _: None = Depends(with_session_guard),
+):
+    validate_csrf(request, csrf_token)
+    from models.ssh_key import SSHKey
+
+    key = db.get(SSHKey, key_id)
+    if not key:
+        return RedirectResponse(url="/?error=Key%20not%20found", status_code=303)
+    service = TunnelAccessService(db)
+    ok, result = _perform_mutation(
+        db=db,
+        actor=admin["username"],
+        action="toggle_ssh_key",
+        target=f"key_id:{key_id}",
+        details=f"enabled={enabled}",
+        execute=lambda: service.toggle_key(key_id, enabled),
+    )
+    if ok:
+        return RedirectResponse(url=f"/users/{key.tunnel_user_id}?message=Key%20updated", status_code=303)
+    return RedirectResponse(url=f"/users/{key.tunnel_user_id}?error={quote_plus(result)}", status_code=303)
+
+
+@router.post("/keys/{key_id}/delete")
+def delete_key(
+    key_id: int,
+    request: Request,
+    csrf_token: str = Form(...),
+    db: Session = Depends(db_session),
+    admin: dict = Depends(require_admin),
+    _: None = Depends(with_session_guard),
+):
+    validate_csrf(request, csrf_token)
+    from models.ssh_key import SSHKey
+
+    key = db.get(SSHKey, key_id)
+    if not key:
+        return RedirectResponse(url="/?error=Key%20not%20found", status_code=303)
+    user_id = key.tunnel_user_id
+    service = TunnelAccessService(db)
+    ok, result = _perform_mutation(
+        db=db,
+        actor=admin["username"],
+        action="delete_ssh_key",
+        target=f"key_id:{key_id}",
+        details="deleted",
+        execute=lambda: service.delete_key(key_id),
+    )
+    if ok:
+        return RedirectResponse(url=f"/users/{user_id}?message=Key%20deleted", status_code=303)
+    return RedirectResponse(url=f"/users/{user_id}?error={quote_plus(result)}", status_code=303)
 
 
 @router.post("/users/{user_id}/regenerate")
-def regenerate_user_keys(
+def regenerate_user(
     user_id: int,
     request: Request,
     csrf_token: str = Form(...),
@@ -485,11 +453,11 @@ def regenerate_user_keys(
     ok, result = _perform_mutation(
         db=db,
         actor=admin["username"],
-        action="manual_regenerate_authorized_keys",
+        action="provision_user",
         target=f"user_id:{user_id}",
-        details="manual trigger",
+        details="manual",
         execute=lambda: service.regenerate(user_id),
     )
     if ok:
-        return RedirectResponse(url=f"/users/{user_id}?message=authorized_keys%20regenerated", status_code=303)
+        return RedirectResponse(url=f"/users/{user_id}?message=Provisioned", status_code=303)
     return RedirectResponse(url=f"/users/{user_id}?error={quote_plus(result)}", status_code=303)

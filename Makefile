@@ -16,7 +16,7 @@ UVICORN := $(VENV)/bin/uvicorn
 ALEMBIC := $(VENV)/bin/alembic
 RUFF := $(VENV)/bin/ruff
 
-.PHONY: install run dev migrate lint format venv
+.PHONY: install run dev migrate lint format venv setup-sshd
 
 venv:
 	@test -d $(VENV) || python3 -m venv $(VENV)
@@ -40,3 +40,6 @@ lint: venv
 
 format: venv
 	$(RUFF) format .
+
+setup-sshd:
+	sudo bash scripts/setup-sshd.sh

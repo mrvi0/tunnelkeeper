@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% set title = "Destinations" %}
+{% block content %}
+<section class="rounded-lg border border-slate-800 bg-slate-900 p-4">
+  <div class="flex items-center justify-between mb-3">
+    <div>
+      <h1 class="text-lg font-semibold">Destinations</h1>
+      <p class="text-sm text-slate-400">Global catalog of host:port targets. Assigned per user; enforced via <code class="text-xs">sshd_config.d</code> PermitOpen.</p>
+    </div>
+    {% if not readonly_mode %}
+    <button data-open-modal="add-dest-modal" class="rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 text-sm">Add Destination</button>
+    {% endif %}
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-slate-400">
+        <tr class="border-b border-slate-800">
+          <th class="text-left py-2">Alias</th>
+          <th class="text-left py-2">Host:Port</th>
+          <th class="text-left py-2">Comment</th>
+          <th class="text-left py-2">Status</th>
+          {% if not readonly_mode %}<th class="text-left py-2">Actions</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for dest in destinations %}
+        <tr class="border-b border-slate-800/60">
+          <td class="py-2">{{ dest.alias }}</td>
+          <td class="py-2 font-mono text-xs">{{ dest.host }}:{{ dest.port }}</td>
+          <td class="py-2 text-slate-400">{{ dest.comment or "—" }}</td>
+          <td class="py-2">
+            {% if dest.enabled %}
+            <span class="rounded bg-emerald-900/40 text-emerald-300 px-2 py-1 text-xs">Enabled</span>
+            {% else %}
+            <span class="rounded bg-slate-800 text-slate-300 px-2 py-1 text-xs">Disabled</span>
+            {% endif %}
+          </td>
+          {% if not readonly_mode %}
+          <td class="py-2">
+            <div class="flex gap-2">
+              <form method="post" action="/destinations/{{ dest.id }}/toggle">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <input type="hidden" name="enabled" value="{{ 'false' if dest.enabled else 'true' }}" />
+                <button class="text-amber-400 hover:text-amber-300 text-xs">{{ 'Disable' if dest.enabled else 'Enable' }}</button>
+              </form>
+              <form method="post" action="/destinations/{{ dest.id }}/delete" onsubmit="return confirm('Delete destination? Users will lose this PermitOpen.')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <button class="text-rose-400 hover:text-rose-300 text-xs">Delete</button>
+              </form>
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="py-4 text-slate-500">No destinations yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if not readonly_mode %}
+<dialog id="add-dest-modal" data-modal>
+  <div data-modal-panel class="rounded-xl border border-slate-700 bg-slate-900 text-slate-100 shadow-xl">
+    <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+      <h3 class="font-semibold">Add Destination</h3>
+      <button type="button" data-close-modal class="text-slate-400 hover:text-slate-200" aria-label="Close">×</button>
+    </div>
+    <form method="post" action="/destinations" class="p-4 space-y-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <label class="block">
+        <span class="text-sm text-slate-300">Alias</span>
+        <input name="alias" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
+      </label>
+      <div class="grid grid-cols-3 gap-2">
+        <label class="block col-span-2">
+          <span class="text-sm text-slate-300">Host</span>
+          <input name="host" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-300">Port</span>
+          <input name="port" type="number" min="1" max="65535" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
+        </label>
+      </div>
+      <label class="block">
+        <span class="text-sm text-slate-300">Comment</span>
+        <input name="comment" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
+      </label>
+      <button type="submit" class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Add</button>
+    </form>
+  </div>
+</dialog>
+{% endif %}
+{% endblock %}

@@ -1,118 +1,109 @@
 # TunnelKeeper
 
-TunnelKeeper is a lightweight local-first web panel for managing tunnel-only SSH users through `authorized_keys` restrictions.
+TunnelKeeper is a lightweight local-first web panel for managing tunnel-only SSH users on a Linux host.
 
-## MVP features
+## Architecture
 
-- Tunnel-only Linux user CRUD (`/usr/sbin/nologin`, no password)
-- SSH key CRUD with validation and SHA256 fingerprint
-- PermitOpen rule CRUD with enable/disable
-- Automatic `authorized_keys` regeneration on every change
-- Manual regenerate action from UI
-- Temporary in-memory admin credentials generated on each startup
-- Session-based auth, CSRF token, login rate limit, idle timeout
-- Audit log for all mutating actions
-- Optional readonly mode (`READONLY_MODE=true`)
+Each developer gets a dedicated Linux user (for example `tunnel-vital`):
+
+- **Plain** `~/.ssh/authorized_keys` — only `ssh-ed25519 AAAA...` lines, no `permitopen` in keys
+- **ACL** in `/etc/ssh/sshd_config.d/generated/<username>.conf` via `Match User` + `PermitOpen`
+- Optional shell, supplementary groups (`docker`, …), and tunnel-only vs interactive login
+
+Workflow:
+
+1. Add **Destinations** (global host:port catalog)
+2. Create a **tunnel user**, pick destinations and SSH options
+3. Add **SSH keys** on the user page
+4. Panel writes `authorized_keys` + sshd snippet and runs `systemctl reload sshd`
+
+### sshd prerequisite (one-time on the server)
+
+```bash
+sudo ./scripts/setup-sshd.sh
+# or
+make setup-sshd
+```
+
+This creates `/etc/ssh/sshd_config.d/generated/`, appends `Include /etc/ssh/sshd_config.d/*.conf` to the main config if missing, and reloads sshd.
+
+The dashboard warns if the main config is missing (common on WSL without `openssh-server`).
+
+## Features
+
+- Tunnel user CRUD with shell, groups, sshd Match options
+- Global destinations + per-user PermitOpen assignment
+- SSH key CRUD per user (plain keys)
+- Automatic provisioning on every change
+- Manual regenerate from user page
+- Ephemeral admin credentials on each startup
+- Session auth, CSRF, login rate limit, idle timeout
+- Audit log, optional readonly mode
 
 ## Stack
 
-- Python 3.12
-- FastAPI + Jinja2 + HTMX
-- SQLAlchemy 2 + Alembic
-- SQLite (default)
+- Python 3.12, FastAPI, Jinja2, HTMX
+- SQLAlchemy 2 + Alembic, SQLite (default)
 - TailwindCSS via CDN
 
 ## Quick start
 
-1. Create virtual environment:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-2. Install dependencies (creates `.venv` automatically if missing):
-
 ```bash
 make install
-```
-
-3. Configure environment:
-
-```bash
 cp .env.example .env
-```
-
-4. Run app:
-
-```bash
+make migrate
 make run
 ```
 
-On startup the app prints one-time credentials:
+On startup the app prints one-time admin credentials (memory only, invalid after stop).
 
-```text
-================================================
-TunnelKeeper Admin Panel
-================================================
-Bind:     http://127.0.0.1:8080
-Login:    admin_xxxxx
-Password: yyyyyyyyyyyy
-================================================
-```
-
-Credentials are stored only in memory and become invalid after process stop.
-
-### Remote server access
-
-In `.env` set:
+### Remote access
 
 ```env
 APP_HOST=0.0.0.0
 APP_PORT=8080
 ```
 
-Then `make run` binds on all interfaces. Open `http://<server-ip>:8080` from your machine.
-
-Open the port in the firewall if needed, for example:
-
-```bash
-sudo ufw allow 8080/tcp
-```
-
-Stop the panel when finished (`Ctrl+C`). Do not leave it exposed permanently without TLS and network restrictions.
-
-Readonly mode example:
-
-```bash
-READONLY_MODE=true make run
-```
+Open the firewall if needed. Do not leave the panel exposed without TLS and network restrictions.
 
 ## Make targets
 
-- `make install` - install dependencies
-- `make run` - run using `APP_HOST` / `APP_PORT` from `.env` (default `127.0.0.1:8080`)
-- `make dev` - run with reload
-- `make migrate` - run alembic migrations
-- `make lint` - run ruff checks
-- `make format` - format code with ruff
+- `make install` — dependencies
+- `make run` — `APP_HOST` / `APP_PORT` from `.env`
+- `make dev` — reload
+- `make migrate` — Alembic
+- `make lint` / `make format` — ruff
 
-## Linux integration notes
+## How sshd configs combine
 
-Mutating operations may require root permissions:
+`sshd` reads `/etc/ssh/sshd_config` from top to bottom. When it hits `Include /etc/ssh/sshd_config.d/*.conf`, it loads every `*.conf` in that directory (alphabetically), then continues the main file.
 
-- `useradd` for Linux user creation
-- home `.ssh` and `authorized_keys` permission management
-- writing into user home directories
+TunnelKeeper writes only **per-user snippets**, e.g. `/etc/ssh/sshd_config.d/generated/tunnel-vital.conf`:
 
-If app is started without required permissions, database changes are rolled back and a readable error is shown in UI.
+```text
+Match User tunnel-vital
+    AllowTcpForwarding yes
+    PermitOpen 10.0.0.5:5432
+    ...
+```
+
+`Match User` applies **only when someone logs in as that Linux user**. It is not “more privileged” than the main config — it **narrows** what that user may do (allowed forward targets, no TTY, ForceCommand, etc.). Everyone else keeps the global rules from the main file.
+
+At login time sshd merges: global defaults → matching `Match` blocks for that user. For the same keyword, more specific `Match` rules for that session usually win over generic globals.
+
+The main `sshd_config` is **never** auto-generated; only the snippet files under `SSHD_GENERATED_DIR` are.
+
+## Linux integration
+
+Mutating operations typically require **root**:
+
+- `useradd` / `usermod` / `userdel`
+- `~/.ssh/authorized_keys` and ownership
+- `/etc/ssh/sshd_config.d/generated/*.conf`
+- `systemctl reload sshd` (when `SSHD_RELOAD_ON_CHANGE=true`)
+
+Without permissions, DB changes roll back and the UI shows an error.
 
 ## Operational model
 
-TunnelKeeper is designed as an ephemeral admin tool:
-
-1. Start panel (`make run`)
-2. Apply access changes
-3. Stop panel
-
-It is not intended to be permanently internet-exposed.
+Ephemeral admin tool: start → apply changes → stop. Not meant to stay internet-facing permanently.

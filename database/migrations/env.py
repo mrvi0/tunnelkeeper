@@ -15,11 +15,10 @@ from app.config import get_settings
 from models.base import Base
 from models import (  # noqa: F401
     audit_log,
-    permit_open_rule,
     ssh_key,
-    ssh_key_permit_rule,
-    ssh_key_user_assignment,
+    tunnel_destination,
     tunnel_user,
+    tunnel_user_destination,
 )
 
 config = context.config

@@ -1,19 +1,25 @@
 {% extends "base.html" %}
 {% set title = "Dashboard" %}
 {% block content %}
+{% if sshd_warning %}
+<div class="mb-4 rounded border border-amber-700 bg-amber-900/20 px-3 py-2 text-amber-200 text-sm">
+  <strong>sshd:</strong> {{ sshd_warning }}
+</div>
+{% endif %}
+
 <section class="grid md:grid-cols-3 gap-4 mb-6">
   <div class="rounded-lg border border-slate-800 bg-slate-900 p-4">
     <p class="text-sm text-slate-400">Tunnel Users</p>
     <p class="text-2xl font-semibold">{{ users_count }}</p>
   </div>
-  <a href="/keys" class="rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-slate-700 transition-colors block">
-    <p class="text-sm text-slate-400">SSH Keys</p>
-    <p class="text-2xl font-semibold">{{ keys_count }}</p>
-  </a>
   <div class="rounded-lg border border-slate-800 bg-slate-900 p-4">
-    <p class="text-sm text-slate-400">PermitOpen Rules</p>
-    <p class="text-2xl font-semibold">{{ rules_count }}</p>
+    <p class="text-sm text-slate-400">SSH Keys (total)</p>
+    <p class="text-2xl font-semibold">{{ keys_count }}</p>
   </div>
+  <a href="/destinations" class="rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-slate-700 transition-colors block">
+    <p class="text-sm text-slate-400">Destinations</p>
+    <p class="text-2xl font-semibold">{{ destinations_count }}</p>
+  </a>
 </section>
 
 <section class="rounded-lg border border-slate-800 bg-slate-900 p-4 mb-6">
@@ -34,7 +40,8 @@
       <thead class="text-slate-400">
         <tr class="border-b border-slate-800">
           <th class="text-left py-2">Username</th>
-          <th class="text-left py-2">Comment</th>
+          <th class="text-left py-2">Shell</th>
+          <th class="text-left py-2">Mode</th>
           <th class="text-left py-2">Home</th>
           <th class="text-left py-2">Actions</th>
         </tr>
@@ -43,7 +50,14 @@
         {% for user in users %}
           <tr class="border-b border-slate-800/60">
             <td class="py-2">{{ user.username }}</td>
-            <td class="py-2">{{ user.comment or "-" }}</td>
+            <td class="py-2 font-mono text-xs">{{ user.linux_shell }}</td>
+            <td class="py-2">
+              {% if user.allows_interactive_login %}
+              <span class="text-emerald-400 text-xs">login</span>
+              {% else %}
+              <span class="text-slate-500 text-xs">tunnel</span>
+              {% endif %}
+            </td>
             <td class="py-2 font-mono text-xs">{{ user.linux_home }}</td>
             <td class="py-2">
               <a href="/users/{{ user.id }}" class="text-sky-400 hover:text-sky-300">Open</a>
@@ -83,9 +97,10 @@
   </div>
 </section>
 
+{% if not readonly_mode %}
 <dialog id="create-user-modal" data-modal>
-  <div data-modal-panel class="rounded-xl border border-slate-700 bg-slate-900 text-slate-100 shadow-xl">
-  <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+  <div data-modal-panel class="rounded-xl border border-slate-700 bg-slate-900 text-slate-100 shadow-xl max-h-[90vh] overflow-y-auto">
+  <div class="p-4 border-b border-slate-800 flex items-center justify-between sticky top-0 bg-slate-900">
     <h3 class="font-semibold">Create Tunnel User</h3>
     <button type="button" data-close-modal class="text-slate-400 hover:text-slate-200" aria-label="Close">×</button>
   </div>
@@ -93,7 +108,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     <label class="block">
       <span class="text-sm text-slate-300">Username</span>
-      <input name="username" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" />
+      <input name="username" required class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" placeholder="tunnel-vital" />
     </label>
     <label class="block">
       <span class="text-sm text-slate-300">Comment</span>
@@ -101,10 +116,54 @@
     </label>
     <label class="block">
       <span class="text-sm text-slate-300">Linux Home (optional)</span>
-      <input name="linux_home" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" placeholder="/home/username" />
+      <input name="linux_home" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" placeholder="/home/tunnel-vital" />
     </label>
+    <label class="flex items-center gap-2">
+      <input type="checkbox" name="tunnel_only" value="true" checked class="rounded" />
+      <span class="text-sm text-slate-300">Tunnel only (nologin + ForceCommand)</span>
+    </label>
+    <label class="block">
+      <span class="text-sm text-slate-300">Shell (if not tunnel-only)</span>
+      <select name="linux_shell" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2">
+        {% for key, path in shell_choices.items() %}
+        <option value="{{ key }}" {% if key == 'nologin' %}selected{% endif %}>{{ key }} — {{ path }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="block">
+      <span class="text-sm text-slate-300">Supplementary groups (comma-separated)</span>
+      <input name="supplementary_groups" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2" placeholder="docker,sudo" />
+    </label>
+    <fieldset class="space-y-2 border border-slate-800 rounded p-3">
+      <legend class="text-sm text-slate-400 px-1">SSH restrictions (sshd Match User)</legend>
+      <label class="flex items-center gap-2"><input type="checkbox" name="allow_tcp_forwarding" value="true" checked /> AllowTcpForwarding</label>
+      <label class="flex items-center gap-2"><input type="checkbox" name="permit_tty" value="true" /> PermitTTY</label>
+      <label class="flex items-center gap-2"><input type="checkbox" name="x11_forwarding" value="true" /> X11Forwarding</label>
+      <label class="flex items-center gap-2"><input type="checkbox" name="allow_agent_forwarding" value="true" /> AllowAgentForwarding</label>
+      <label class="block">
+        <span class="text-sm text-slate-300">ForceCommand (optional)</span>
+        <input name="force_command" class="mt-1 w-full rounded bg-slate-950 border border-slate-700 px-3 py-2 font-mono text-xs" placeholder='echo "Tunnel only";exit' />
+      </label>
+    </fieldset>
+    {% if destinations %}
+    <fieldset class="space-y-2 border border-slate-800 rounded p-3">
+      <legend class="text-sm text-slate-400 px-1">PermitOpen destinations</legend>
+      {% for dest in destinations %}
+      {% if dest.enabled %}
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="destination_ids" value="{{ dest.id }}" />
+        <span>{{ dest.alias }} — <span class="font-mono text-xs">{{ dest.host }}:{{ dest.port }}</span></span>
+      </label>
+      {% endif %}
+      {% endfor %}
+      <p class="text-xs text-slate-500">Add destinations on the <a href="/destinations" class="text-sky-400">Destinations</a> page first.</p>
+    </fieldset>
+    {% else %}
+    <p class="text-sm text-amber-400">No destinations yet. <a href="/destinations" class="underline">Create some</a> before assigning PermitOpen.</p>
+    {% endif %}
     <button type="submit" class="w-full rounded bg-sky-600 hover:bg-sky-500 px-3 py-2 font-medium">Create</button>
   </form>
   </div>
 </dialog>
+{% endif %}
 {% endblock %}
