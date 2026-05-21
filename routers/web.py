@@ -14,7 +14,6 @@ from app.config import get_settings
 from app.dependencies import db_session, require_admin, with_session_guard
 from app.schemas import SHELL_CHOICES, DestinationCreate, SSHKeyCreate, TunnelUserCreate, TunnelUserUpdate
 from app.security import ensure_csrf, validate_csrf
-from models.tunnel_destination import TunnelDestination
 from models.tunnel_user import TunnelUser
 from repositories.audit_repository import AuditRepository
 from repositories.destination_repository import DestinationRepository

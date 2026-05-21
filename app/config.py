@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +30,18 @@ class Settings(BaseSettings):
         alias="SSHD_INCLUDE_SNIPPET",
     )
     sshd_reload_on_change: bool = Field(default=True, alias="SSHD_RELOAD_ON_CHANGE")
+
+    enable_web_ui: bool = Field(default=True, alias="ENABLE_WEB_UI")
+    enable_api: bool = Field(default=False, alias="ENABLE_API")
+    api_token: str = Field(default="", alias="API_TOKEN")
+
+    @model_validator(mode="after")
+    def _validate_runtime_modes(self) -> Settings:
+        if not self.enable_web_ui and not self.enable_api:
+            raise ValueError("At least one of ENABLE_WEB_UI or ENABLE_API must be true.")
+        if self.enable_api and len(self.api_token.strip()) < 16:
+            raise ValueError("API_TOKEN is required (min 16 chars) when ENABLE_API=true.")
+        return self
 
 
 @lru_cache(maxsize=1)

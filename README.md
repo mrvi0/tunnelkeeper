@@ -29,9 +29,30 @@ This creates `/etc/ssh/sshd_config.d/generated/`, appends `Include /etc/ssh/sshd
 
 The dashboard warns if the main config is missing (common on WSL without `openssh-server`).
 
+## Runtime modes
+
+| Mode | `.env` | Use case |
+|------|--------|----------|
+| Web only (default) | `ENABLE_WEB_UI=true` `ENABLE_API=false` | Local admin panel |
+| Web + API | both `true` + `API_TOKEN` | Panel + remote orchestrator |
+| API only | `ENABLE_WEB_UI=false` `ENABLE_API=true` | Bastion agent, systemd |
+
+API auth: `Authorization: Bearer <API_TOKEN>` or header `X-API-Key`.
+
+OpenAPI docs: `/docs` when API is enabled.
+
+Example:
+
+```bash
+curl -s -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8090/api/v1/health
+```
+
+Background service: see `scripts/tunnelkeeper.service`.
+
 ## Features
 
 - Tunnel user CRUD with shell, groups, sshd Match options
+- JSON REST API `/api/v1/*` for external panels
 - Global destinations + per-user PermitOpen assignment
 - SSH key CRUD per user (plain keys)
 - Automatic provisioning on every change
@@ -72,7 +93,22 @@ Open the firewall if needed. Do not leave the panel exposed without TLS and netw
 - `make run` — `APP_HOST` / `APP_PORT` from `.env`
 - `make dev` — reload
 - `make migrate` — Alembic
+- `make setup-sshd` — one-time sshd Include + generated dir
 - `make lint` / `make format` — ruff
+
+### API-only example
+
+```env
+ENABLE_WEB_UI=false
+ENABLE_API=true
+API_TOKEN=your-long-random-token-here-min-16-chars
+APP_HOST=127.0.0.1
+APP_PORT=8090
+```
+
+```bash
+sudo -E make run
+```
 
 ## How sshd configs combine
 
